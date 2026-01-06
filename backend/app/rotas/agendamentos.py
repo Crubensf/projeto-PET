@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.modelos.agendamento import Agendamento
@@ -43,15 +44,36 @@ def _validar_conflito(profissional_id: int, inicio, db: Session, ignore_id: int 
         raise HTTPException(status_code=409, detail="Conflito: já existe agendamento neste horário para o profissional.")
 
 
+def _validar_telemedicina(especialidade_id: int, modalidade: str, db: Session):
+    if modalidade != "TELEMEDICINA":
+        return
+
+    esp = db.get(Especialidade, especialidade_id)
+    if not esp:
+        raise HTTPException(status_code=404, detail="Especialidade não encontrada.")
+
+    if not esp.permite_telemedicina:
+        raise HTTPException(status_code=400, detail="Esta especialidade não permite telemedicina.")
+
+
 @router.post("", response_model=AgendamentoOut, status_code=status.HTTP_201_CREATED)
 def criar(payload: AgendamentoCreate, db: Session = Depends(get_db)):
     data = payload.model_dump()
+    data["status"] = "agendado"
+
     _validar_fk(data, db)
+    _validar_telemedicina(data["especialidade_id"], data["modalidade"], db)
     _validar_conflito(data["profissional_id"], data["inicio"], db)
 
     obj = Agendamento(**data)
     db.add(obj)
-    db.commit()
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflito: agendamento já existe para este horário/profissional.")
+
     db.refresh(obj)
     return obj
 
@@ -76,16 +98,29 @@ def atualizar(agendamento_id: int, payload: AgendamentoUpdate, db: Session = Dep
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
 
     data = payload.model_dump(exclude_unset=True)
+
+    if "status" in data:
+        data["status"] = "agendado"
+
     _validar_fk(data, db)
 
     profissional_id = data.get("profissional_id", obj.profissional_id)
     inicio = data.get("inicio", obj.inicio)
+    especialidade_id = data.get("especialidade_id", obj.especialidade_id)
+    modalidade = data.get("modalidade", obj.modalidade)
+
+    _validar_telemedicina(especialidade_id, modalidade, db)
     _validar_conflito(profissional_id, inicio, db, ignore_id=obj.id)
 
     for k, v in data.items():
         setattr(obj, k, v)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflito: agendamento já existe para este horário/profissional.")
+
     db.refresh(obj)
     return obj
 

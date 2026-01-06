@@ -1,7 +1,16 @@
+from __future__ import annotations
+
+import re
+import unicodedata
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app.core.database import SessionLocal
 from app.modelos.especialidade import Especialidade
 from app.modelos.local_atendimento import LocalAtendimento
 from app.modelos.profissional import Profissional
+
 
 ESPECIALIDADES = [
     ("Clínico Geral", True),
@@ -23,43 +32,82 @@ ESPECIALIDADES = [
 ]
 
 LOCAIS = [
-    ("UBS Centro", "Av. Principal, 1000", "Teresina", "PI"),
-    ("UBS Vila Esperança", "Rua X, 123", "Teresina", "PI"),
+    ("UBS Centro", "Av. Principal, 1000", "Teresina"),
+    ("UBS Vila Esperança", "Rua X, 123", "Teresina"),
 ]
 
-PROFISSIONAIS = [
-    ("Dra. Ana Paula", "CRM-PI 12345", "Clínico Geral"),
-    ("Dr. João Silva", "CRM-PI 54321", "Cardiologia"),
-    ("Dra. Maria Souza", "CRM-PI 77777", "Ginecologia e Obstetrícia"),
-    ("Psicóloga Carla Lima", "CRP-PI 9999", "Psicologia"),
-    ("Nutricionista Bruno", "CRN-PI 8888", "Nutrição"),
-]
 
-def bootstrap_all():
+def _slug_codigo(nome: str) -> str:
+    s = unicodedata.normalize("NFKD", nome)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = s.upper().strip()
+    s = re.sub(r"[^A-Z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s[:80]
+
+
+def _seed_especialidades(db: Session) -> None:
+    for nome, tele in ESPECIALIDADES:
+        codigo = _slug_codigo(nome)
+
+        esp = db.scalar(select(Especialidade).where(Especialidade.codigo == codigo))
+        if esp:
+            if esp.nome != nome:
+                esp.nome = nome
+            if esp.permite_telemedicina != tele:
+                esp.permite_telemedicina = tele
+            continue
+
+        esp_por_nome = db.scalar(select(Especialidade).where(Especialidade.nome == nome))
+        if esp_por_nome:
+            esp_por_nome.codigo = codigo
+            esp_por_nome.permite_telemedicina = tele
+            continue
+
+        db.add(Especialidade(codigo=codigo, nome=nome, permite_telemedicina=tele))
+
+
+def _seed_locais(db: Session) -> None:
+    for nome, endereco, municipio in LOCAIS:
+        existe = db.scalar(select(LocalAtendimento).where(LocalAtendimento.nome == nome))
+        if existe:
+            if existe.endereco != endereco:
+                existe.endereco = endereco
+            if existe.municipio != municipio:
+                existe.municipio = municipio
+            continue
+        db.add(LocalAtendimento(nome=nome, endereco=endereco, municipio=municipio))
+
+
+def _seed_profissionais_para_todas_especialidades(db: Session) -> None:
+    """
+    Garante no mínimo 1 profissional por especialidade.
+    Se já existir algum profissional naquela especialidade, não cria.
+    """
+    especialidades = list(db.scalars(select(Especialidade)).all())
+
+    for esp in especialidades:
+        ja_tem = db.scalar(
+            select(Profissional).where(Profissional.especialidade_id == esp.id)
+        )
+        if ja_tem:
+            continue
+
+        # cria 1 profissional genérico por especialidade
+        nome_prof = f"Prof. {esp.nome}"
+        db.add(Profissional(nome=nome_prof, especialidade_id=esp.id))
+
+
+def bootstrap_all() -> None:
     db = SessionLocal()
     try:
-        # Especialidades
-        for nome, tele in ESPECIALIDADES:
-            existe = db.query(Especialidade).filter_by(nome=nome).first()
-            if not existe:
-                db.add(Especialidade(nome=nome, permite_telemedicina=tele))
+        _seed_especialidades(db)
         db.commit()
 
-        # Locais
-        for nome, endereco, municipio, estado in LOCAIS:
-            existe = db.query(LocalAtendimento).filter_by(nome=nome).first()
-            if not existe:
-                db.add(LocalAtendimento(nome=nome, endereco=endereco, municipio=municipio, estado=estado))
+        _seed_locais(db)
         db.commit()
 
-        # Profissionais
-        for nome, registro, esp_nome in PROFISSIONAIS:
-            esp = db.query(Especialidade).filter_by(nome=esp_nome).first()
-            if not esp:
-                continue
-            existe = db.query(Profissional).filter_by(nome=nome).first()
-            if not existe:
-                db.add(Profissional(nome=nome, registro_conselho=registro, especialidade_id=esp.id))
+        _seed_profissionais_para_todas_especialidades(db)
         db.commit()
     finally:
         db.close()

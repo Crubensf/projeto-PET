@@ -1,31 +1,31 @@
+MOTHER_NAME_EXT_URL = "https://example.org/fhir/StructureDefinition/patient-mothersName"
+
+
 def paciente_para_fhir(p):
     return {
         "resourceType": "Patient",
         "id": str(p.id),
-        "identifier": ([] if not p.cns else [{
-            "use": "official",
-            "type": {"text": "CNS"},
-            "system": "http://example.org/fhir/NamingSystem/cns",
-            "value": p.cns
-        }]),
+        "identifier": [
+            {
+                "use": "official",
+                "system": "https://saude.gov.br/sus/cartao",
+                "value": p.cartao_sus,
+            }
+        ],
         "name": [{"use": "official", "text": p.nome}],
         "telecom": [{"system": "phone", "value": p.telefone, "use": "mobile"}],
         "birthDate": p.data_nascimento.isoformat(),
-        "address": [{
-            "use": "home",
-            "line": [p.endereco] if p.endereco else [],
-            "city": p.municipio,
-            "country": "BR"
-        }],
-        "contact": [{
-            "relationship": [{
-                "coding": [{
-                    "system": "http://terminology.hl7.org/CodeSystem/v2-0131",
-                    "code": "MTH",
-                    "display": "Mother"
-                }],
-                "text": "Mãe"
-            }],
-            "name": {"text": p.nome_mae}
-        }]
+        "address": [
+            {
+                "text": p.endereco,
+                "city": p.municipio,
+                "country": "BR",
+            }
+        ],
+        "extension": [
+            {
+                "url": MOTHER_NAME_EXT_URL,
+                "valueString": p.nome_mae,
+            }
+        ],
     }

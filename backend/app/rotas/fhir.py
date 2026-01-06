@@ -1,80 +1,133 @@
+from io import BytesIO
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.modelos.paciente import Paciente
 from app.modelos.agendamento import Agendamento
+from app.modelos.profissional import Profissional
+from app.modelos.local_atendimento import LocalAtendimento
+
+from app.serializadores_fhir.paciente import paciente_para_fhir
+from app.serializadores_fhir.profissional import profissional_para_fhir
+from app.serializadores_fhir.local import local_para_fhir
+from app.serializadores_fhir.agendamento import agendamento_para_fhir
+from app.serializadores_fhir.bundle import bundle_comprovante
+
+# PDF 
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 router = APIRouter(prefix="/fhir", tags=["FHIR R4"])
 
 
-MOTHER_NAME_EXT_URL = "https://example.org/fhir/StructureDefinition/patient-mothersName"
+def _fmt_dt_br(dt) -> str:
+    if dt is None:
+        return "-"
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except Exception:
+            return dt
+    try:
+        return dt.astimezone().strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return str(dt)
 
 
-def patient_to_fhir(p: Paciente) -> dict:
-    return {
-        "resourceType": "Patient",
-        "id": str(p.id),
-        "identifier": [
-            {
-                "system": "https://saude.gov.br/sus/cartao",
-                "value": p.cartao_sus,
-            }
-        ],
-        "name": [
-            {
-                "use": "official",
-                "text": p.nome,
-            }
-        ],
-        "telecom": [
-            {"system": "phone", "value": p.telefone, "use": "mobile"}
-        ],
-        "birthDate": p.data_nascimento.isoformat(),
-        "address": [
-            {
-                "text": p.endereco,
-                "city": p.municipio,
-            }
-        ],
-        "extension": [
-            {
-                "url": MOTHER_NAME_EXT_URL,
-                "valueString": p.nome_mae,
-            }
-        ],
-    }
+def _safe(v) -> str:
+    return "-" if v is None else str(v)
 
 
-def appointment_to_fhir(a: Agendamento) -> dict:
-    return {
-        "resourceType": "Appointment",
-        "id": str(a.id),
-        "status": a.status,
-        "start": a.inicio.isoformat(),
-        "serviceType": [
-            {
-                "coding": [
-                    {"code": getattr(a.especialidade, "codigo", None), "display": getattr(a.especialidade, "nome", None)}
-                ]
-            }
-        ],
-        "participant": [
-            {
-                "actor": {"reference": f"Patient/{a.paciente_id}", "display": getattr(a.paciente, "nome", None)},
-                "status": "accepted",
-            },
-            {
-                "actor": {"reference": f"Practitioner/{a.profissional_id}", "display": getattr(a.profissional, "nome", None)},
-                "status": "accepted",
-            },
-            {
-                "actor": {"reference": f"Location/{a.local_id}", "display": getattr(a.local, "nome", None)},
-                "status": "accepted",
-            },
-        ],
-        "comment": f"Modalidade: {a.modalidade}",
-    }
+def gerar_pdf_comprovante(a: Agendamento) -> bytes:
+    
+    p = a.paciente
+    prof = a.profissional
+    loc = a.local
+    esp = a.especialidade
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    y = height - 60
+
+    c.setTitle(f"Comprovante - Agendamento #{a.id}")
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(50, y, "Comprovante de Agendamento (UBS)")
+    y -= 25
+
+    c.setFont("Helvetica", 10)
+    c.drawString(50, y, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    y -= 18
+
+    c.setLineWidth(1)
+    c.line(50, y, width - 50, y)
+    y -= 22
+
+    # Paciente
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(50, y, "Dados do paciente")
+    y -= 16
+    c.setFont("Helvetica", 11)
+    c.drawString(50, y, f"Nome: {_safe(getattr(p, 'nome', None))}")
+    y -= 14
+    c.drawString(50, y, f"CNS: {_safe(getattr(p, 'cartao_sus', None))}")
+    y -= 14
+    c.drawString(50, y, f"Data de nascimento: {_safe(str(getattr(p, 'data_nascimento', '-'))[:10])}")
+    y -= 14
+    c.drawString(50, y, f"Telefone: {_safe(getattr(p, 'telefone', None))}")
+    y -= 14
+    c.drawString(50, y, f"Município: {_safe(getattr(p, 'municipio', None))}")
+    y -= 14
+    c.drawString(50, y, f"Endereço: {_safe(getattr(p, 'endereco', None))}")
+    y -= 14
+    c.drawString(50, y, f"Nome da mãe: {_safe(getattr(p, 'nome_mae', None))}")
+    y -= 22
+
+    # Atendimento
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(50, y, "Dados do atendimento")
+    y -= 16
+    c.setFont("Helvetica", 11)
+    c.drawString(50, y, f"Nº do agendamento: #{_safe(getattr(a, 'id', None))}")
+    y -= 14
+    c.drawString(50, y, f"Data/Hora: {_fmt_dt_br(getattr(a, 'inicio', None))}")
+    y -= 14
+    c.drawString(50, y, f"Especialidade: {_safe(getattr(esp, 'nome', None))}")
+    y -= 14
+    c.drawString(50, y, f"Profissional: {_safe(getattr(prof, 'nome', None))}")
+    y -= 14
+    c.drawString(50, y, f"Local: {_safe(getattr(loc, 'nome', None))}")
+    y -= 14
+    c.drawString(50, y, f"Endereço do local: {_safe(getattr(loc, 'endereco', None))}")
+    y -= 14
+    c.drawString(50, y, f"Modalidade: {_safe(getattr(a, 'modalidade', None))}")
+    y -= 14
+    c.drawString(50, y, f"Status: {_safe(getattr(a, 'status', None))}")
+    y -= 24
+
+    c.setFont("Helvetica", 10)
+    c.drawString(50, y, "Orientações: chegue com 15 minutos de antecedência (se presencial).")
+    y -= 12
+    c.drawString(50, y, "Em caso de dúvidas, procure a recepção da unidade.")
+    y -= 20
+
+    c.setLineWidth(1)
+    c.line(50, 80, width - 50, 80)
+    c.setFont("Helvetica", 9)
+    c.drawString(50, 65, "Este documento é um comprovante de agendamento e pode ser impresso.")
+    c.drawString(50, 52, "Sistema de Agendamento UBS (Projeto PET)")
+
+    c.showPage()
+    c.save()
+
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
 
 
 @router.get("/patient/{paciente_id}")
@@ -82,14 +135,64 @@ def get_patient_fhir(paciente_id: int, db: Session = Depends(get_db)):
     p = db.get(Paciente, paciente_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
-    return patient_to_fhir(p)
+    return JSONResponse(content=paciente_para_fhir(p), media_type="application/fhir+json")
+
+
+@router.get("/practitioner/{profissional_id}")
+def get_practitioner_fhir(profissional_id: int, db: Session = Depends(get_db)):
+    prof = db.get(Profissional, profissional_id)
+    if not prof:
+        raise HTTPException(status_code=404, detail="Profissional não encontrado.")
+    return JSONResponse(content=profissional_para_fhir(prof), media_type="application/fhir+json")
+
+
+@router.get("/location/{local_id}")
+def get_location_fhir(local_id: int, db: Session = Depends(get_db)):
+    loc = db.get(LocalAtendimento, local_id)
+    if not loc:
+        raise HTTPException(status_code=404, detail="Local não encontrado.")
+    return JSONResponse(content=local_para_fhir(loc), media_type="application/fhir+json")
 
 
 @router.get("/appointment/{agendamento_id}")
 def get_appointment_fhir(agendamento_id: int, db: Session = Depends(get_db)):
+  
     a = db.get(Agendamento, agendamento_id)
     if not a:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
-    # garante relacionamentos carregados (a depender da config)
+
+   
     _ = a.paciente, a.profissional, a.especialidade, a.local
-    return appointment_to_fhir(a)
+
+    return JSONResponse(content=agendamento_para_fhir(a), media_type="application/fhir+json")
+
+
+@router.get("/bundle/comprovante/{agendamento_id}")
+def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
+   
+    a = db.get(Agendamento, agendamento_id)
+    if not a:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+
+    
+    _ = a.paciente, a.profissional, a.local, a.especialidade
+    if not all([a.paciente, a.profissional, a.local, a.especialidade]):
+        raise HTTPException(status_code=409, detail="Dados relacionados incompletos para gerar comprovante.")
+
+    pdf_bytes = gerar_pdf_comprovante(a)
+    filename = f"comprovante_agendamento_{a.id}.pdf"
+    headers = {"Content-Disposition": f'inline; filename="{filename}"'}
+
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+
+@router.get("/bundle/fhir/comprovante/{agendamento_id}")
+def get_bundle_comprovante_fhir(agendamento_id: int, db: Session = Depends(get_db)):
+   
+    a = db.get(Agendamento, agendamento_id)
+    if not a:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+
+    _ = a.paciente, a.profissional, a.local, a.especialidade
+    bundle = bundle_comprovante(a.paciente, a.profissional, a.local, a)
+    return JSONResponse(content=bundle, media_type="application/fhir+json")

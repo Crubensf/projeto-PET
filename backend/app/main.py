@@ -3,9 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.environment import settings
 from app.core.database import Base, engine
+from app.core.bootstrap import bootstrap_all
 
-# Importa modelos para garantir criação das tabelas
-from app import modelos  # noqa: F401
+
+from app import modelos  
 
 from app.rotas.pacientes import router as pacientes_router
 from app.rotas.profissionais import router as profissionais_router
@@ -29,6 +30,13 @@ app.add_middleware(
 )
 
 Base.metadata.create_all(bind=engine)
+
+
+@app.on_event("startup")
+def _startup_seed():
+ 
+    bootstrap_all()
+
 
 app.include_router(especialidades_router)
 app.include_router(profissionais_router)

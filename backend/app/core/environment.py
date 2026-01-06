@@ -1,16 +1,17 @@
-from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    API_TITLE: str = Field(default="PET Saúde - API")
-    ENV: str = Field(default="dev")
+    API_TITLE: str = "PET Saúde"
+    ENV: str = "dev"
+    CORS_ORIGINS: str = "http://localhost:5173"
     DATABASE_URL: str
-    CORS_ORIGINS: str = Field(default="*")
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 settings = Settings()

@@ -6,7 +6,6 @@ def local_para_fhir(l):
         "address": {
             "line": [l.endereco] if l.endereco else [],
             "city": l.municipio,
-            "state": l.estado,
-            "country": "BR"
-        }
+            "country": "BR",
+        },
     }
