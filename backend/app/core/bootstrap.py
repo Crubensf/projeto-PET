@@ -32,9 +32,28 @@ ESPECIALIDADES = [
 ]
 
 LOCAIS = [
-    ("UBS Centro", "Av. Principal, 1000", "Teresina"),
-    ("UBS Vila Esperança", "Rua X, 123", "Teresina"),
+    ("UBS Canto da Várzea", "Av. Principal, 1000", "Picos"),
+    ("UE UFPI CSHNB", "Rua X, 123", "Picos"),
 ]
+
+PROFISSIONAIS_POR_ESPECIALIDADE = {
+    "Clínico Geral": "Dra. Ana Paula",
+    "Ginecologia e Obstetrícia": "Dra. Maria Souza",
+    "Hepatologia": "Dr. Pedro Almeida",
+    "Pediatria": "Dra. Juliana Costa",
+    "Cardiologia": "Dr. João Silva",
+    "Dermatologia": "Dra. Camila Rocha",
+    "Neurologia": "Dr. Rafael Nogueira",
+    "Psiquiatria": "Dr. Bruno Fernandes",
+    "Endocrinologia": "Dra. Renata Ribeiro",
+    "Ortopedia": "Dr. Carlos Pereira",
+    "Otorrinolaringologia": "Dr. Felipe Martins",
+    "Urologia": "Dr. Gustavo Araújo",
+    "Psicologia": "Psicóloga Carla Lima",
+    "Nutrição": "Nutricionista Bruno",
+    "Endoscopia digestiva alta": "Dr. Marcelo Azevedo",
+    "Ultrassonografia": "Dra. Larissa Freitas",
+}
 
 
 def _slug_codigo(nome: str) -> str:
@@ -71,30 +90,22 @@ def _seed_locais(db: Session) -> None:
     for nome, endereco, municipio in LOCAIS:
         existe = db.scalar(select(LocalAtendimento).where(LocalAtendimento.nome == nome))
         if existe:
-            if existe.endereco != endereco:
-                existe.endereco = endereco
-            if existe.municipio != municipio:
-                existe.municipio = municipio
             continue
         db.add(LocalAtendimento(nome=nome, endereco=endereco, municipio=municipio))
 
 
 def _seed_profissionais_para_todas_especialidades(db: Session) -> None:
-    """
-    Garante no mínimo 1 profissional por especialidade.
-    Se já existir algum profissional naquela especialidade, não cria.
-    """
     especialidades = list(db.scalars(select(Especialidade)).all())
 
     for esp in especialidades:
-        ja_tem = db.scalar(
-            select(Profissional).where(Profissional.especialidade_id == esp.id)
-        )
+        ja_tem = db.scalar(select(Profissional).where(Profissional.especialidade_id == esp.id))
         if ja_tem:
             continue
 
-        # cria 1 profissional genérico por especialidade
-        nome_prof = f"Prof. {esp.nome}"
+        nome_prof = PROFISSIONAIS_POR_ESPECIALIDADE.get(esp.nome)
+        if not nome_prof:
+            nome_prof = f"Dr(a). {esp.nome}"
+
         db.add(Profissional(nome=nome_prof, especialidade_id=esp.id))
 
 
