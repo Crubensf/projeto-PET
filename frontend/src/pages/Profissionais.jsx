@@ -1,30 +1,22 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { pacienteService } from "../services/pacienteService";
-
-function onlyDigits(v) {
-  return String(v ?? "").replace(/\D+/g, "");
-}
-function clampDigits(v, max) {
-  return onlyDigits(v).slice(0, max);
-}
+import api from "../services/api";
 
 function initialForm() {
   return {
     nome: "",
-    cartao_sus: "",
-    telefone: "",
-    data_nascimento: "",
-    municipio: "",
-    endereco: "",
-    nome_mae: "",
+    especialidade_id: "",
+    crm: "",
+    crm_uf: "",
+    ativo: true,
   };
 }
 
-export default function Pacientes() {
+export default function Profissionais() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [items, setItems] = useState([]);
+  const [especialidades, setEspecialidades] = useState([]);
 
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -36,18 +28,29 @@ export default function Pacientes() {
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
     if (!q) return items;
+
     return items.filter((p) =>
-      [p.nome, p.municipio, p.cartao_sus, p.telefone].some((v) =>
-        String(v ?? "").toLowerCase().includes(q)
-      )
+      [
+        p.nome,
+        p.crm,
+        p.crm_uf,
+        especialidades.find((e) => e.id === p.especialidade_id)?.nome ?? "",
+      ].some((v) => String(v ?? "").toLowerCase().includes(q))
     );
-  }, [items, query]);
+  }, [items, query, especialidades]);
 
   async function load() {
     setLoading(true);
     setErr("");
     try {
-      setItems(await pacienteService.list());
+      const [prof, esp] = await Promise.all([
+        api.get("/api/profissionais"),
+        api.get("/api/especialidades"),
+      ]);
+
+      
+      setItems(Array.isArray(prof) ? prof : prof?.data ?? []);
+      setEspecialidades(Array.isArray(esp) ? esp : esp?.data ?? []);
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {
@@ -63,15 +66,14 @@ export default function Pacientes() {
     setEditingId(p.id);
     setForm({
       nome: p.nome ?? "",
-      cartao_sus: String(p.cartao_sus ?? ""),
-      telefone: String(p.telefone ?? ""),
-      data_nascimento: (p.data_nascimento ?? "").slice(0, 10),
-      municipio: p.municipio ?? "",
-      endereco: p.endereco ?? "",
-      nome_mae: p.nome_mae ?? "",
+      especialidade_id: String(p.especialidade_id ?? ""),
+      crm: p.crm ?? "",
+      crm_uf: p.crm_uf ?? "",
+      ativo: Boolean(p.ativo),
     });
 
     setErr("");
+    
     setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 0);
@@ -83,38 +85,24 @@ export default function Pacientes() {
     setErr("");
   }
 
-  async function removePaciente(p) {
-    const ok = window.confirm(
-      `Excluir o paciente "${p.nome}"?\n\nSe existir agendamento vinculado a ele, a exclusão pode ser bloqueada.`
-    );
-    if (!ok) return;
-
-    setErr("");
-    try {
-      await pacienteService.remove(p.id);
-      if (editingId === p.id) resetForm();
-      await load();
-    } catch (e) {
-      setErr(String(e?.message || e));
-    }
-  }
-
   async function submit(e) {
     e.preventDefault();
     setSaving(true);
     setErr("");
 
     const payload = {
-      ...form,
-      cartao_sus: clampDigits(form.cartao_sus, 15),
-      telefone: clampDigits(form.telefone, 11),
+      nome: form.nome,
+      especialidade_id: Number(form.especialidade_id),
+      crm: form.crm || null,
+      crm_uf: form.crm_uf || null,
+      ativo: Boolean(form.ativo),
     };
 
     try {
       if (editingId) {
-        await pacienteService.update(editingId, payload);
+        await api.put(`/api/profissionais/${editingId}`, payload);
       } else {
-        await pacienteService.create(payload);
+        await api.post("/api/profissionais", payload);
       }
 
       resetForm();
@@ -126,16 +114,36 @@ export default function Pacientes() {
     }
   }
 
+  async function removeProfissional(p) {
+    const ok = window.confirm(
+      `Excluir o profissional "${p.nome}"?\n\nSe existir agendamento vinculado a ele, a exclusão pode ser bloqueada.`
+    );
+    if (!ok) return;
+
+    setErr("");
+    try {
+      
+      await api.del(`/api/profissionais/${p.id}`);
+
+      if (editingId === p.id) resetForm();
+      await load();
+    } catch (e) {
+      setErr(String(e?.message || e));
+    }
+  }
+
   return (
     <div style={styles.page}>
       <div style={styles.header}>
         <div>
-          <div style={styles.h1}>Pacientes</div>
-          <div style={styles.h2}>Cadastro e gerenciamento de pacientes</div>
+          <div style={styles.h1}>Profissionais</div>
+          <div style={styles.h2}>
+            Cadastro e gerenciamento de profissionais de saúde
+          </div>
         </div>
 
         <button onClick={resetForm} type="button" style={styles.secondaryBtn}>
-          Novo paciente
+          Novo profissional
         </button>
       </div>
 
@@ -149,9 +157,8 @@ export default function Pacientes() {
       >
         <div style={styles.formTopRow}>
           <div style={styles.formTitle}>
-            {editingId ? `Editando #${editingId}` : "Novo paciente"}
+            {editingId ? `Editando #${editingId}` : "Novo profissional"}
           </div>
-
           {editingId ? (
             <button
               type="button"
@@ -170,49 +177,46 @@ export default function Pacientes() {
             value={form.nome}
             onChange={(v) => setForm({ ...form, nome: v })}
           />
-          <Field
-            label="Nome da mãe"
-            value={form.nome_mae}
-            onChange={(v) => setForm({ ...form, nome_mae: v })}
+
+          <FieldSelect
+            label="Especialidade"
+            value={form.especialidade_id}
+            onChange={(v) => setForm({ ...form, especialidade_id: v })}
+            options={especialidades.map((e) => ({
+              value: String(e.id),
+              label: e.nome,
+            }))}
           />
 
           <Field
-            label="Cartão SUS"
-            value={form.cartao_sus}
-            inputMode="numeric"
-            maxLength={15}
-            onChange={(v) =>
-              setForm({ ...form, cartao_sus: clampDigits(v, 15) })
-            }
-          />
-          <Field
-            label="Telefone"
-            value={form.telefone}
-            inputMode="numeric"
-            maxLength={11}
-            onChange={(v) =>
-              setForm({ ...form, telefone: clampDigits(v, 11) })
-            }
+            label="CRM"
+            value={form.crm}
+            onChange={(v) => setForm({ ...form, crm: v })}
           />
 
           <Field
-            type="date"
-            label="Nascimento"
-            value={form.data_nascimento}
-            onChange={(v) => setForm({ ...form, data_nascimento: v })}
-          />
-          <Field
-            label="Município"
-            value={form.municipio}
-            onChange={(v) => setForm({ ...form, municipio: v })}
+            label="UF do CRM"
+            value={form.crm_uf}
+            maxLength={2}
+            onChange={(v) => setForm({ ...form, crm_uf: v.toUpperCase() })}
           />
 
-          <Field
-            label="Endereço"
-            full
-            value={form.endereco}
-            onChange={(v) => setForm({ ...form, endereco: v })}
-          />
+          <label
+            style={{
+              ...styles.field,
+              gridColumn: "1 / -1",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={form.ativo}
+              onChange={(e) => setForm({ ...form, ativo: e.target.checked })}
+            />
+            <span style={styles.checkboxLabel}>Profissional ativo</span>
+          </label>
         </div>
 
         <div style={styles.actions}>
@@ -226,7 +230,7 @@ export default function Pacientes() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar paciente..."
+          placeholder="Buscar profissional, CRM, especialidade..."
           style={styles.search}
         />
       </div>
@@ -236,12 +240,13 @@ export default function Pacientes() {
           <thead>
             <tr>
               <th style={styles.th}>Nome</th>
-              <th style={styles.th}>CNS</th>
-              <th style={styles.th}>Telefone</th>
-              <th style={styles.th}>Município</th>
+              <th style={styles.th}>Especialidade</th>
+              <th style={styles.th}>CRM</th>
+              <th style={styles.th}>Ativo</th>
               <th style={styles.th}>Ações</th>
             </tr>
           </thead>
+
           <tbody>
             {loading ? (
               <tr>
@@ -252,75 +257,92 @@ export default function Pacientes() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={5} style={styles.tdMuted}>
-                  Nenhum paciente.
+                  Nenhum profissional.
                 </td>
               </tr>
             ) : (
-              filtered.map((p) => (
-                <tr key={p.id}>
-                  <td style={styles.td}>{p.nome}</td>
-                  <td style={styles.td}>{p.cartao_sus}</td>
-                  <td style={styles.td}>{p.telefone}</td>
-                  <td style={styles.td}>{p.municipio}</td>
-                  <td style={styles.td}>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={() => startEdit(p)}
-                        style={styles.smallBtn}
-                      >
-                        Editar
-                      </button>
+              filtered.map((p) => {
+                const esp =
+                  especialidades.find((e) => e.id === p.especialidade_id)?.nome ||
+                  `#${p.especialidade_id}`;
 
-                      <button
-                        type="button"
-                        onClick={() => removePaciente(p)}
-                        style={styles.smallBtnDanger}
-                      >
-                        Excluir
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                const crmStr =
+                  p.crm && p.crm_uf ? `${p.crm} - ${p.crm_uf}` : p.crm || "-";
+
+                return (
+                  <tr key={p.id}>
+                    <td style={styles.td}>{p.nome}</td>
+                    <td style={styles.td}>{esp}</td>
+                    <td style={styles.td}>{crmStr}</td>
+                    <td style={styles.td}>{p.ativo ? "Sim" : "Não"}</td>
+                    <td style={styles.td}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => startEdit(p)}
+                          style={styles.smallBtn}
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => removeProfissional(p)}
+                          style={styles.smallBtnDanger}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
 
         <div style={styles.tableHint}>
           Dica: se a exclusão falhar, geralmente é porque existem agendamentos
-          vinculados ao paciente (restrição de chave estrangeira).
+          vinculados ao profissional (restrição de chave estrangeira).
         </div>
       </div>
     </div>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  type = "text",
-  full,
-  inputMode,
-  maxLength,
-}) {
+function Field({ label, value, onChange, type = "text", maxLength }) {
   return (
-    <label
-      style={{
-        ...styles.field,
-        gridColumn: full ? "1 / -1" : "auto",
-      }}
-    >
+    <label style={styles.field}>
       <div style={styles.label}>{label}</div>
       <input
         type={type}
         value={value}
-        inputMode={inputMode}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
         style={styles.input}
       />
+    </label>
+  );
+}
+
+function FieldSelect({ label, value, onChange, options }) {
+  return (
+    <label style={styles.field}>
+      <div style={styles.label}>{label}</div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={styles.input}
+      >
+        <option value="" disabled>
+          Selecione...
+        </option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -351,7 +373,7 @@ const styles = {
     marginTop: 16,
   },
 
-  
+
   stickyForm: {
     position: "sticky",
     top: 90,
@@ -400,6 +422,12 @@ const styles = {
     borderRadius: 12,
     border: "1px solid #bfdbfe",
     outline: "none",
+  },
+
+  checkboxLabel: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#334155",
   },
 
   actions: {

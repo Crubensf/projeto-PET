@@ -1,10 +1,12 @@
-from app.modelos.paciente import Paciente
-from app.modelos.profissional import Profissional
-from app.modelos.especialidade import Especialidade
-from app.modelos.local_atendimento import LocalAtendimento
-from app.modelos.agendamento import Agendamento
+from .usuario import Usuario
+from .paciente import Paciente
+from .profissional import Profissional
+from .especialidade import Especialidade
+from .local_atendimento import LocalAtendimento
+from .agendamento import Agendamento
 
 __all__ = [
+    "Usuario",
     "Paciente",
     "Profissional",
     "Especialidade",

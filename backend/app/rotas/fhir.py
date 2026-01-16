@@ -17,7 +17,6 @@ from app.serializadores_fhir.local import local_para_fhir
 from app.serializadores_fhir.agendamento import agendamento_para_fhir
 from app.serializadores_fhir.bundle import bundle_comprovante
 
-# PDF 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
@@ -43,11 +42,11 @@ def _safe(v) -> str:
 
 
 def gerar_pdf_comprovante(a: Agendamento) -> bytes:
-    
     p = a.paciente
     prof = a.profissional
     loc = a.local
     esp = a.especialidade
+    usuario = getattr(a, "criado_por", None)
 
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -68,7 +67,6 @@ def gerar_pdf_comprovante(a: Agendamento) -> bytes:
     c.line(50, y, width - 50, y)
     y -= 22
 
-    # Paciente
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, y, "Dados do paciente")
     y -= 16
@@ -88,7 +86,6 @@ def gerar_pdf_comprovante(a: Agendamento) -> bytes:
     c.drawString(50, y, f"Nome da mãe: {_safe(getattr(p, 'nome_mae', None))}")
     y -= 22
 
-    # Atendimento
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, y, "Dados do atendimento")
     y -= 16
@@ -99,7 +96,12 @@ def gerar_pdf_comprovante(a: Agendamento) -> bytes:
     y -= 14
     c.drawString(50, y, f"Especialidade: {_safe(getattr(esp, 'nome', None))}")
     y -= 14
-    c.drawString(50, y, f"Profissional: {_safe(getattr(prof, 'nome', None))}")
+
+    crm_str = ""
+    if getattr(prof, "crm", None) and getattr(prof, "crm_uf", None):
+        crm_str = f" (CRM {prof.crm}-{prof.crm_uf})"
+
+    c.drawString(50, y, f"Profissional: {_safe(getattr(prof, 'nome', None))}{crm_str}")
     y -= 14
     c.drawString(50, y, f"Local: {_safe(getattr(loc, 'nome', None))}")
     y -= 14
@@ -108,8 +110,13 @@ def gerar_pdf_comprovante(a: Agendamento) -> bytes:
     c.drawString(50, y, f"Modalidade: {_safe(getattr(a, 'modalidade', None))}")
     y -= 14
     c.drawString(50, y, f"Status: {_safe(getattr(a, 'status', None))}")
-    y -= 24
+    y -= 14
 
+    if usuario:
+        c.drawString(50, y, f"Agendado por: {_safe(getattr(usuario, 'nome', None))}")
+        y -= 14
+
+    y -= 10
     c.setFont("Helvetica", 10)
     c.drawString(50, y, "Orientações: chegue com 15 minutos de antecedência (se presencial).")
     y -= 12
@@ -156,12 +163,10 @@ def get_location_fhir(local_id: int, db: Session = Depends(get_db)):
 
 @router.get("/appointment/{agendamento_id}")
 def get_appointment_fhir(agendamento_id: int, db: Session = Depends(get_db)):
-  
     a = db.get(Agendamento, agendamento_id)
     if not a:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
 
-   
     _ = a.paciente, a.profissional, a.especialidade, a.local
 
     return JSONResponse(content=agendamento_para_fhir(a), media_type="application/fhir+json")
@@ -169,15 +174,16 @@ def get_appointment_fhir(agendamento_id: int, db: Session = Depends(get_db)):
 
 @router.get("/bundle/comprovante/{agendamento_id}")
 def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
-   
     a = db.get(Agendamento, agendamento_id)
     if not a:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
 
-    
     _ = a.paciente, a.profissional, a.local, a.especialidade
     if not all([a.paciente, a.profissional, a.local, a.especialidade]):
-        raise HTTPException(status_code=409, detail="Dados relacionados incompletos para gerar comprovante.")
+        raise HTTPException(
+            status_code=409,
+            detail="Dados relacionados incompletos para gerar comprovante.",
+        )
 
     pdf_bytes = gerar_pdf_comprovante(a)
     filename = f"comprovante_agendamento_{a.id}.pdf"
@@ -188,7 +194,6 @@ def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
 
 @router.get("/bundle/fhir/comprovante/{agendamento_id}")
 def get_bundle_comprovante_fhir(agendamento_id: int, db: Session = Depends(get_db)):
-   
     a = db.get(Agendamento, agendamento_id)
     if not a:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")

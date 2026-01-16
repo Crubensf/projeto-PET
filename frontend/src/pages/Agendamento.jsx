@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   carregarCatalogos,
@@ -121,9 +120,15 @@ export default function Agendamento() {
   const [accProfissionaisOpen, setAccProfissionaisOpen] = useState(false);
   const [accLocaisOpen, setAccLocaisOpen] = useState(false);
 
-  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 900);
+  const [isNarrow, setIsNarrow] = useState(
+    () => (typeof window !== "undefined" ? window.innerWidth < 900 : false)
+  );
+
   useEffect(() => {
-    const onResize = () => setIsNarrow(window.innerWidth < 900);
+    const onResize = () => {
+      if (typeof window === "undefined") return;
+      setIsNarrow(window.innerWidth < 900);
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -189,7 +194,10 @@ export default function Agendamento() {
         setSlots(res.available || []);
         setSelectedSlot("");
       } catch (e) {
-        showToast("Falha ao carregar horários", e.message || "Erro desconhecido");
+        showToast(
+          "Falha ao carregar horários",
+          e.message || "Erro desconhecido"
+        );
       }
     }
     run();
@@ -226,7 +234,18 @@ export default function Agendamento() {
     setPaciente(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/pacientes/by-cns/${cnsDigits}`);
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("access_token")
+          : null;
+
+      const res = await fetch(`${API_BASE}/api/pacientes/by-cns/${cnsDigits}`, {
+        headers: {
+          Accept: "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
       if (!res.ok) {
         if (res.status === 404) {
           showToast(
@@ -238,11 +257,12 @@ export default function Agendamento() {
         let msg = `Erro ${res.status}`;
         try {
           const data = await res.json();
-          if (data?.detail)
+          if (data?.detail) {
             msg =
               typeof data.detail === "string"
                 ? data.detail
                 : JSON.stringify(data.detail);
+          }
         } catch {}
         throw new Error(msg);
       }
@@ -288,13 +308,16 @@ export default function Agendamento() {
         local_id: Number(localId),
         inicio: selectedSlot,
         modalidade,
-        status: "Agendado",
+        status: "booked",
       };
 
       const ag = await criarAgendamento(payloadAg);
       setAgendamentoCriado(ag);
       setStep(3);
-      showToast("Agendamento confirmado", "Agendamento realizado com sucesso.");
+      showToast(
+        "Agendamento confirmado",
+        "Agendamento realizado com sucesso."
+      );
     } catch (e) {
       showToast("Erro ao confirmar", e.message || "Erro desconhecido");
     } finally {
@@ -329,11 +352,32 @@ export default function Agendamento() {
         </div>
 
         <div style={styles.stepper}>
-          <div style={{ ...styles.step, ...(step === 1 ? styles.stepActive : {}) }}>1</div>
+          <div
+            style={{
+              ...styles.step,
+              ...(step === 1 ? styles.stepActive : {}),
+            }}
+          >
+            1
+          </div>
           <div style={styles.stepLine} />
-          <div style={{ ...styles.step, ...(step === 2 ? styles.stepActive : {}) }}>2</div>
+          <div
+            style={{
+              ...styles.step,
+              ...(step === 2 ? styles.stepActive : {}),
+            }}
+          >
+            2
+          </div>
           <div style={styles.stepLine} />
-          <div style={{ ...styles.step, ...(step === 3 ? styles.stepActive : {}) }}>3</div>
+          <div
+            style={{
+              ...styles.step,
+              ...(step === 3 ? styles.stepActive : {}),
+            }}
+          >
+            3
+          </div>
         </div>
       </div>
 
@@ -341,8 +385,16 @@ export default function Agendamento() {
 
       {step === 1 ? (
         <div style={styles.grid}>
-          <div style={{ ...styles.gridMain, gridColumn: isNarrow ? "span 12" : "span 8" }}>
-            <Card title="Identificação do paciente" subtitle="Informe apenas o CNS para localizar o cadastro">
+          <div
+            style={{
+              ...styles.gridMain,
+              gridColumn: isNarrow ? "span 12" : "span 8",
+            }}
+          >
+            <Card
+              title="Identificação do paciente"
+              subtitle="Informe apenas o CNS para localizar o cadastro"
+            >
               <div style={styles.formGridSingle}>
                 <Field
                   label="Cartão SUS (CNS — 15 dígitos)"
@@ -356,11 +408,20 @@ export default function Agendamento() {
               </div>
 
               <div style={styles.actions}>
-                <button type="button" style={styles.primaryBtn} onClick={buscarPorCns} disabled={buscandoCns}>
+                <button
+                  type="button"
+                  style={styles.primaryBtn}
+                  onClick={buscarPorCns}
+                  disabled={buscandoCns}
+                >
                   {buscandoCns ? "Buscando..." : "Continuar"}
                 </button>
 
-                <button type="button" style={styles.secondaryBtn} onClick={() => navigate("/pacientes")}>
+                <button
+                  type="button"
+                  style={styles.secondaryBtn}
+                  onClick={() => navigate("/pacientes")}
+                >
                   Cadastrar paciente
                 </button>
               </div>
@@ -371,12 +432,26 @@ export default function Agendamento() {
             </Card>
           </div>
 
-          <div style={{ ...styles.gridSide, gridColumn: isNarrow ? "span 12" : "span 4" }}>
-            <Card title="Catálogo" subtitle="Dados carregados do sistema">
+          <div
+            style={{
+              ...styles.gridSide,
+              gridColumn: isNarrow ? "span 12" : "span 4",
+            }}
+          >
+            <Card
+              title="Catálogo"
+              subtitle="Dados carregados do sistema"
+            >
               <div style={styles.kpiRow}>
-                <Kpi label="Especialidades" value={especialidades.length} />
+                <Kpi
+                  label="Especialidades"
+                  value={especialidades.length}
+                />
                 <Kpi label="Locais" value={locais.length} />
-                <Kpi label="Profissionais" value={profissionaisAll.length} />
+                <Kpi
+                  label="Profissionais"
+                  value={profissionaisAll.length}
+                />
               </div>
             </Card>
           </div>
@@ -385,48 +460,117 @@ export default function Agendamento() {
 
       {step === 2 ? (
         <div style={styles.grid}>
-          <div style={{ ...styles.gridSide, gridColumn: isNarrow ? "span 12" : "span 4" }}>
-            <Card title="Paciente" subtitle="Dados do cadastro (somente leitura)">
+          <div
+            style={{
+              ...styles.gridSide,
+              gridColumn: isNarrow ? "span 12" : "span 4",
+            }}
+          >
+            <Card
+              title="Paciente"
+              subtitle="Dados do cadastro (somente leitura)"
+            >
               {!paciente ? (
                 <div style={styles.note}>
                   Nenhum paciente carregado. Volte e busque pelo CNS.
                 </div>
               ) : (
                 <div style={styles.readonlyBox}>
-                  <div style={styles.readRow}><span style={styles.readLabel}>Nome</span><span style={styles.readValue}>{paciente.nome}</span></div>
-                  <div style={styles.readRow}><span style={styles.readLabel}>CNS</span><span style={styles.readValue}>{paciente.cartao_sus}</span></div>
-                  <div style={styles.readRow}><span style={styles.readLabel}>Nascimento</span><span style={styles.readValue}>{String(paciente.data_nascimento).slice(0, 10)}</span></div>
-                  <div style={styles.readRow}><span style={styles.readLabel}>Telefone</span><span style={styles.readValue}>{paciente.telefone}</span></div>
-                  <div style={styles.readRow}><span style={styles.readLabel}>Município</span><span style={styles.readValue}>{paciente.municipio}</span></div>
-                  <div style={styles.readRow}><span style={styles.readLabel}>Endereço</span><span style={styles.readValue}>{paciente.endereco}</span></div>
-                  <div style={styles.readRow}><span style={styles.readLabel}>Nome da mãe</span><span style={styles.readValue}>{paciente.nome_mae}</span></div>
+                  <div style={styles.readRow}>
+                    <span style={styles.readLabel}>Nome</span>
+                    <span style={styles.readValue}>{paciente.nome}</span>
+                  </div>
+                  <div style={styles.readRow}>
+                    <span style={styles.readLabel}>CNS</span>
+                    <span style={styles.readValue}>
+                      {paciente.cartao_sus}
+                    </span>
+                  </div>
+                  <div style={styles.readRow}>
+                    <span style={styles.readLabel}>Nascimento</span>
+                    <span style={styles.readValue}>
+                      {String(paciente.data_nascimento).slice(0, 10)}
+                    </span>
+                  </div>
+                  <div style={styles.readRow}>
+                    <span style={styles.readLabel}>Telefone</span>
+                    <span style={styles.readValue}>
+                      {paciente.telefone}
+                    </span>
+                  </div>
+                  <div style={styles.readRow}>
+                    <span style={styles.readLabel}>Município</span>
+                    <span style={styles.readValue}>
+                      {paciente.municipio}
+                    </span>
+                  </div>
+                  <div style={styles.readRow}>
+                    <span style={styles.readLabel}>Endereço</span>
+                    <span style={styles.readValue}>
+                      {paciente.endereco}
+                    </span>
+                  </div>
+                  <div style={styles.readRow}>
+                    <span style={styles.readLabel}>Nome da mãe</span>
+                    <span style={styles.readValue}>
+                      {paciente.nome_mae}
+                    </span>
+                  </div>
                 </div>
               )}
 
               <div style={styles.actionsLeft}>
-                <button type="button" style={styles.secondaryBtn} onClick={() => setStep(1)}>
+                <button
+                  type="button"
+                  style={styles.secondaryBtn}
+                  onClick={() => setStep(1)}
+                >
                   Trocar CNS
                 </button>
               </div>
             </Card>
           </div>
 
-          <div style={{ ...styles.gridMain, gridColumn: isNarrow ? "span 12" : "span 8" }}>
-            <Card title="Seleção do atendimento" subtitle="Escolha especialidade, profissional, local, data e horário">
+          <div
+            style={{
+              ...styles.gridMain,
+              gridColumn: isNarrow ? "span 12" : "span 8",
+            }}
+          >
+            <Card
+              title="Seleção do atendimento"
+              subtitle="Escolha especialidade, profissional, local, data e horário"
+            >
               <Accordion
                 title="Especialidade"
-                subtitle={especialidadeSelecionada ? `Selecionada: ${especialidadeSelecionada.nome}` : "Clique para escolher"}
+                subtitle={
+                  especialidadeSelecionada
+                    ? `Selecionada: ${especialidadeSelecionada.nome}`
+                    : "Clique para escolher"
+                }
                 open={accEspecialidadesOpen}
-                onToggle={() => setAccEspecialidadesOpen((v) => !v)}
+                onToggle={() =>
+                  setAccEspecialidadesOpen((v) => !v)
+                }
               >
                 <div style={styles.cardList}>
                   {especialidades.map((e) => (
                     <SelectableCard
                       key={e.id}
-                      selected={String(e.id) === String(especialidadeId)}
+                      selected={
+                        String(e.id) === String(especialidadeId)
+                      }
                       title={e.nome}
                       subtitle={`Código: ${e.codigo}`}
-                      right={e.permite_telemedicina ? <Pill variant="ok">Telemedicina</Pill> : <Pill variant="warn">Somente presencial</Pill>}
+                      right={
+                        e.permite_telemedicina ? (
+                          <Pill variant="ok">Telemedicina</Pill>
+                        ) : (
+                          <Pill variant="warn">
+                            Somente presencial
+                          </Pill>
+                        )
+                      }
                       onClick={() => {
                         setEspecialidadeId(String(e.id));
                         setAccEspecialidadesOpen(false);
@@ -441,22 +585,34 @@ export default function Agendamento() {
                 title="Profissional"
                 subtitle={
                   profissionalId
-                    ? `Selecionado: ${profissionais.find((p) => String(p.id) === String(profissionalId))?.nome ?? "—"}`
+                    ? `Selecionado: ${
+                        profissionais.find(
+                          (p) =>
+                            String(p.id) ===
+                            String(profissionalId)
+                        )?.nome ?? "—"
+                      }`
                     : "Clique para escolher"
                 }
                 open={accProfissionaisOpen}
                 onToggle={() => setAccProfissionaisOpen((v) => !v)}
               >
                 {!especialidadeId ? (
-                  <div style={styles.note}>Selecione uma especialidade primeiro.</div>
+                  <div style={styles.note}>
+                    Selecione uma especialidade primeiro.
+                  </div>
                 ) : profissionais.length === 0 ? (
-                  <div style={styles.note}>Nenhum profissional para esta especialidade.</div>
+                  <div style={styles.note}>
+                    Nenhum profissional para esta especialidade.
+                  </div>
                 ) : (
                   <div style={styles.cardList}>
                     {profissionais.map((p) => (
                       <SelectableCard
                         key={p.id}
-                        selected={String(p.id) === String(profissionalId)}
+                        selected={
+                          String(p.id) === String(profissionalId)
+                        }
                         title={p.nome}
                         subtitle={`ID: ${p.id}`}
                         onClick={() => {
@@ -472,7 +628,15 @@ export default function Agendamento() {
 
               <Accordion
                 title="Local"
-                subtitle={localId ? `Selecionado: ${locais.find((l) => String(l.id) === String(localId))?.nome ?? "—"}` : "Clique para escolher"}
+                subtitle={
+                  localId
+                    ? `Selecionado: ${
+                        locais.find(
+                          (l) => String(l.id) === String(localId)
+                        )?.nome ?? "—"
+                      }`
+                    : "Clique para escolher"
+                }
                 open={accLocaisOpen}
                 onToggle={() => setAccLocaisOpen((v) => !v)}
               >
@@ -480,7 +644,9 @@ export default function Agendamento() {
                   {locais.map((l) => (
                     <SelectableCard
                       key={l.id}
-                      selected={String(l.id) === String(localId)}
+                      selected={
+                        String(l.id) === String(localId)
+                      }
                       title={l.nome}
                       subtitle={`${l.municipio} — ${l.endereco}`}
                       onClick={() => {
@@ -495,49 +661,88 @@ export default function Agendamento() {
               <div style={styles.sectionRow}>
                 <div style={styles.col}>
                   <div style={styles.sectionTitle}>Data</div>
-                  <input style={styles.input} type="date" value={dateStr} onChange={(e) => setDateStr(e.target.value)} />
+                  <input
+                    style={styles.input}
+                    type="date"
+                    value={dateStr}
+                    onChange={(e) =>
+                      setDateStr(e.target.value)
+                    }
+                  />
                 </div>
 
                 <div style={styles.col}>
                   <div style={styles.sectionTitle}>Modalidade</div>
                   <div style={styles.modalRow}>
                     <label style={styles.radioLabel}>
-                      <input type="radio" checked={modalidade === "PRESENCIAL"} onChange={() => setModalidade("PRESENCIAL")} />
+                      <input
+                        type="radio"
+                        checked={modalidade === "PRESENCIAL"}
+                        onChange={() =>
+                          setModalidade("PRESENCIAL")
+                        }
+                      />
                       <span>Presencial</span>
                     </label>
                     <label style={styles.radioLabel}>
                       <input
                         type="radio"
-                        checked={modalidade === "TELEMEDICINA"}
-                        disabled={!especialidadeSelecionada?.permite_telemedicina}
-                        onChange={() => setModalidade("TELEMEDICINA")}
+                        checked={
+                          modalidade === "TELEMEDICINA"
+                        }
+                        disabled={
+                          !especialidadeSelecionada?.permite_telemedicina
+                        }
+                        onChange={() =>
+                          setModalidade("TELEMEDICINA")
+                        }
                       />
                       <span>Telemedicina</span>
                     </label>
                   </div>
                   {!especialidadeSelecionada?.permite_telemedicina ? (
-                    <div style={styles.noteSmall}>Telemedicina só está disponível se a especialidade permitir.</div>
+                    <div style={styles.noteSmall}>
+                      Telemedicina só está disponível se a
+                      especialidade permitir.
+                    </div>
                   ) : null}
                 </div>
               </div>
 
               <div style={styles.section}>
-                <div style={styles.sectionTitle}>Horários disponíveis</div>
+                <div style={styles.sectionTitle}>
+                  Horários disponíveis
+                </div>
                 {!profissionalId ? (
-                  <div style={styles.note}>Selecione um profissional para listar horários.</div>
+                  <div style={styles.note}>
+                    Selecione um profissional para listar
+                    horários.
+                  </div>
                 ) : (
                   <div style={styles.slotGrid}>
                     {slots.length === 0 ? (
-                      <div style={styles.note}>Nenhum horário disponível.</div>
+                      <div style={styles.note}>
+                        Nenhum horário disponível.
+                      </div>
                     ) : (
                       slots.map((s) => (
                         <button
                           type="button"
                           key={s}
-                          style={{ ...styles.slotBtn, ...(selectedSlot === s ? styles.slotBtnActive : {}) }}
-                          onClick={() => setSelectedSlot(s)}
+                          style={{
+                            ...styles.slotBtn,
+                            ...(selectedSlot === s
+                              ? styles.slotBtnActive
+                              : {}),
+                          }}
+                          onClick={() =>
+                            setSelectedSlot(s)
+                          }
                         >
-                          {new Date(s).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {new Date(s).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </button>
                       ))
                     )}
@@ -546,10 +751,18 @@ export default function Agendamento() {
               </div>
 
               <div style={styles.actions}>
-                <button type="button" style={styles.secondaryBtn} onClick={() => setStep(1)}>
+                <button
+                  type="button"
+                  style={styles.secondaryBtn}
+                  onClick={() => setStep(1)}
+                >
                   Voltar
                 </button>
-                <button type="button" style={styles.primaryBtn} onClick={confirmarAgendamento}>
+                <button
+                  type="button"
+                  style={styles.primaryBtn}
+                  onClick={confirmarAgendamento}
+                >
                   Confirmar
                 </button>
               </div>
@@ -560,24 +773,76 @@ export default function Agendamento() {
 
       {step === 3 ? (
         <div style={styles.grid}>
-          <div style={{ ...styles.gridMain, gridColumn: isNarrow ? "span 12" : "span 8" }}>
-            <Card title="Comprovante" subtitle="Agendamento confirmado">
+          <div
+            style={{
+              ...styles.gridMain,
+              gridColumn: isNarrow ? "span 12" : "span 8",
+            }}
+          >
+            <Card
+              title="Comprovante"
+              subtitle="Agendamento confirmado"
+            >
               {!agendamentoCriado ? (
-                <div style={styles.note}>Nenhum agendamento encontrado.</div>
+                <div style={styles.note}>
+                  Nenhum agendamento encontrado.
+                </div>
               ) : (
                 <div style={styles.comprovante}>
                   <div style={styles.kpiRow}>
-                    <Kpi label="Agendamento" value={`#${agendamentoCriado.id}`} />
-                    <Kpi label="Situação" value={agendamentoCriado.status} />
-                    <Kpi label="Modalidade" value={agendamentoCriado.modalidade} />
+                    <Kpi
+                      label="Agendamento"
+                      value={`#${agendamentoCriado.id}`}
+                    />
+                    <Kpi
+                      label="Situação"
+                      value={agendamentoCriado.status}
+                    />
+                    <Kpi
+                      label="Modalidade"
+                      value={agendamentoCriado.modalidade}
+                    />
                   </div>
 
                   <div style={styles.readonlyBox}>
-                    <div style={styles.readRow}><span style={styles.readLabel}>Início</span><span style={styles.readValue}>{new Date(agendamentoCriado.inicio).toLocaleString("pt-BR")}</span></div>
-                    <div style={styles.readRow}><span style={styles.readLabel}>Paciente</span><span style={styles.readValue}>#{agendamentoCriado.paciente_id}</span></div>
-                    <div style={styles.readRow}><span style={styles.readLabel}>Profissional</span><span style={styles.readValue}>#{agendamentoCriado.profissional_id}</span></div>
-                    <div style={styles.readRow}><span style={styles.readLabel}>Especialidade</span><span style={styles.readValue}>#{agendamentoCriado.especialidade_id}</span></div>
-                    <div style={styles.readRow}><span style={styles.readLabel}>Local</span><span style={styles.readValue}>#{agendamentoCriado.local_id}</span></div>
+                    <div style={styles.readRow}>
+                      <span style={styles.readLabel}>Início</span>
+                      <span style={styles.readValue}>
+                        {new Date(
+                          agendamentoCriado.inicio
+                        ).toLocaleString("pt-BR")}
+                      </span>
+                    </div>
+                    <div style={styles.readRow}>
+                      <span style={styles.readLabel}>
+                        Paciente
+                      </span>
+                      <span style={styles.readValue}>
+                        #{agendamentoCriado.paciente_id}
+                      </span>
+                    </div>
+                    <div style={styles.readRow}>
+                      <span style={styles.readLabel}>
+                        Profissional
+                      </span>
+                      <span style={styles.readValue}>
+                        #{agendamentoCriado.profissional_id}
+                      </span>
+                    </div>
+                    <div style={styles.readRow}>
+                      <span style={styles.readLabel}>
+                        Especialidade
+                      </span>
+                      <span style={styles.readValue}>
+                        #{agendamentoCriado.especialidade_id}
+                      </span>
+                    </div>
+                    <div style={styles.readRow}>
+                      <span style={styles.readLabel}>Local</span>
+                      <span style={styles.readValue}>
+                        #{agendamentoCriado.local_id}
+                      </span>
+                    </div>
                   </div>
 
                   <div style={styles.actions}>
@@ -601,7 +866,11 @@ export default function Agendamento() {
                   </div>
 
                   <div style={styles.actions}>
-                    <button type="button" style={styles.secondaryBtn} onClick={resetFlow}>
+                    <button
+                      type="button"
+                      style={styles.secondaryBtn}
+                      onClick={resetFlow}
+                    >
                       Novo agendamento
                     </button>
                   </div>
@@ -610,10 +879,19 @@ export default function Agendamento() {
             </Card>
           </div>
 
-          <div style={{ ...styles.gridSide, gridColumn: isNarrow ? "span 12" : "span 4" }}>
-            <Card title="Ajuda" subtitle="Informações adicionais">
+          <div
+            style={{
+              ...styles.gridSide,
+              gridColumn: isNarrow ? "span 12" : "span 4",
+            }}
+          >
+            <Card
+              title="Ajuda"
+              subtitle="Informações adicionais"
+            >
               <div style={styles.note}>
-                Você pode abrir o comprovante e os detalhes do atendimento pelos botões acima.
+                Você pode abrir o comprovante e os detalhes do
+                atendimento pelos botões acima.
               </div>
             </Card>
           </div>
@@ -623,7 +901,16 @@ export default function Agendamento() {
   );
 }
 
-function Field({ label, value, onChange, type = "text", inputMode, maxLength, hint, placeholder }) {
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  inputMode,
+  maxLength,
+  hint,
+  placeholder,
+}) {
   return (
     <div style={styles.field}>
       <label style={styles.label}>{label}</label>
@@ -636,17 +923,37 @@ function Field({ label, value, onChange, type = "text", inputMode, maxLength, hi
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
-      {hint ? <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>{hint}</div> : null}
+      {hint ? (
+        <div
+          style={{
+            fontSize: 11,
+            color: "#475569",
+            marginTop: 6,
+          }}
+        >
+          {hint}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function SelectableCard({ selected, title, subtitle, right, onClick }) {
   return (
-    <div onClick={onClick} style={{ ...styles.selectCard, ...(selected ? styles.selectCardActive : {}) }} role="button" tabIndex={0}>
+    <div
+      onClick={onClick}
+      style={{
+        ...styles.selectCard,
+        ...(selected ? styles.selectCardActive : {}),
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div>
         <div style={styles.selectTitle}>{title}</div>
-        {subtitle ? <div style={styles.selectSubtitle}>{subtitle}</div> : null}
+        {subtitle ? (
+          <div style={styles.selectSubtitle}>{subtitle}</div>
+        ) : null}
       </div>
       <div>{right}</div>
     </div>
@@ -672,7 +979,12 @@ const styles = {
     flexWrap: "wrap",
   },
   h1: { fontSize: 22, fontWeight: 950, color: "#0f172a" },
-  h2: { fontSize: 13, color: "#334155", marginTop: 6, maxWidth: 720 },
+  h2: {
+    fontSize: 13,
+    color: "#334155",
+    marginTop: 6,
+    maxWidth: 720,
+  },
 
   stepper: { display: "flex", alignItems: "center", gap: 10 },
   step: {
@@ -686,10 +998,19 @@ const styles = {
     color: "#1d4ed8",
     fontWeight: 900,
   },
-  stepActive: { background: "#1d4ed8", borderColor: "#1d4ed8", color: "white" },
+  stepActive: {
+    background: "#1d4ed8",
+    borderColor: "#1d4ed8",
+    color: "white",
+  },
   stepLine: { width: 28, height: 2, background: "#bfdbfe" },
 
-  grid: { display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 16, alignItems: "start" },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(12, 1fr)",
+    gap: 16,
+    alignItems: "start",
+  },
   gridMain: { gridColumn: "span 8" },
   gridSide: { gridColumn: "span 4" },
 
@@ -705,7 +1026,11 @@ const styles = {
   cardSubtitle: { fontSize: 12, color: "#334155", marginTop: 6 },
   cardBody: { padding: 16 },
 
-  formGridSingle: { display: "grid", gridTemplateColumns: "1fr", gap: 12 },
+  formGridSingle: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: 12,
+  },
 
   field: { display: "flex", flexDirection: "column", gap: 6 },
   label: { fontSize: 12, color: "#334155", fontWeight: 800 },
@@ -718,55 +1043,239 @@ const styles = {
     outline: "none",
   },
 
-  actions: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" },
-  actionsLeft: { display: "flex", gap: 10, justifyContent: "flex-start", marginTop: 14, flexWrap: "wrap" },
-  primaryBtn: { background: "#1d4ed8", color: "white", border: "1px solid #1d4ed8", borderRadius: 12, padding: "10px 14px", cursor: "pointer", fontWeight: 900 },
-  secondaryBtn: { background: "white", color: "#0f172a", border: "1px solid #bfdbfe", borderRadius: 12, padding: "10px 14px", cursor: "pointer", fontWeight: 900 },
-  linkBtn: { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: 12, padding: "10px 14px", cursor: "pointer", fontWeight: 900, textDecoration: "none" },
+  actions: {
+    display: "flex",
+    gap: 10,
+    justifyContent: "flex-end",
+    marginTop: 14,
+    flexWrap: "wrap",
+  },
+  actionsLeft: {
+    display: "flex",
+    gap: 10,
+    justifyContent: "flex-start",
+    marginTop: 14,
+    flexWrap: "wrap",
+  },
+  primaryBtn: {
+    background: "#1d4ed8",
+    color: "white",
+    border: "1px solid #1d4ed8",
+    borderRadius: 12,
+    padding: "10px 14px",
+    cursor: "pointer",
+    fontWeight: 900,
+  },
+  secondaryBtn: {
+    background: "white",
+    color: "#0f172a",
+    border: "1px solid #bfdbfe",
+    borderRadius: 12,
+    padding: "10px 14px",
+    cursor: "pointer",
+    fontWeight: 900,
+  },
+  linkBtn: {
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    border: "1px solid #bfdbfe",
+    borderRadius: 12,
+    padding: "10px 14px",
+    cursor: "pointer",
+    fontWeight: 900,
+    textDecoration: "none",
+  },
 
-  note: { fontSize: 12, color: "#334155", background: "#f8fbff", border: "1px dashed #bfdbfe", borderRadius: 12, padding: 12, marginTop: 10 },
-  noteSmall: { fontSize: 12, color: "#334155", marginTop: 8, padding: 10, borderRadius: 12, background: "#f8fbff", border: "1px solid #dbeafe" },
+  note: {
+    fontSize: 12,
+    color: "#334155",
+    background: "#f8fbff",
+    border: "1px dashed #bfdbfe",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  noteSmall: {
+    fontSize: 12,
+    color: "#334155",
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 12,
+    background: "#f8fbff",
+    border: "1px solid #dbeafe",
+  },
 
   section: { marginTop: 12 },
-  sectionRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 },
+  sectionRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+    marginTop: 12,
+  },
   col: { minWidth: 0 },
-  sectionTitle: { fontSize: 13, fontWeight: 950, marginBottom: 8, color: "#0f172a" },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 950,
+    marginBottom: 8,
+    color: "#0f172a",
+  },
 
   cardList: { display: "grid", gap: 10 },
-  selectCard: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", padding: 12, borderRadius: 14, border: "1px solid #dbeafe", background: "#f8fbff", cursor: "pointer" },
-  selectCardActive: { borderColor: "#93c5fd", background: "#eff6ff" },
+  selectCard: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 14,
+    border: "1px solid #dbeafe",
+    background: "#f8fbff",
+    cursor: "pointer",
+  },
+  selectCardActive: {
+    borderColor: "#93c5fd",
+    background: "#eff6ff",
+  },
   selectTitle: { fontSize: 14, fontWeight: 900, color: "#0f172a" },
-  selectSubtitle: { fontSize: 12, color: "#334155", marginTop: 4 },
+  selectSubtitle: {
+    fontSize: 12,
+    color: "#334155",
+    marginTop: 4,
+  },
 
-  pill: { fontSize: 12, padding: "6px 10px", borderRadius: 999, border: "1px solid", fontWeight: 900 },
+  pill: {
+    fontSize: 12,
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid",
+    fontWeight: 900,
+  },
 
   slotGrid: { display: "flex", flexWrap: "wrap", gap: 8 },
-  slotBtn: { background: "white", color: "#0f172a", border: "1px solid #bfdbfe", borderRadius: 999, padding: "8px 10px", cursor: "pointer", fontWeight: 900, fontSize: 12 },
-  slotBtnActive: { borderColor: "#1d4ed8", background: "#eff6ff", color: "#1d4ed8" },
+  slotBtn: {
+    background: "white",
+    color: "#0f172a",
+    border: "1px solid #bfdbfe",
+    borderRadius: 999,
+    padding: "8px 10px",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontSize: 12,
+  },
+  slotBtnActive: {
+    borderColor: "#1d4ed8",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+  },
 
   modalRow: { display: "flex", gap: 14, flexWrap: "wrap" },
-  radioLabel: { display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: "#0f172a" },
+  radioLabel: {
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    fontSize: 13,
+    color: "#0f172a",
+  },
 
   kpiRow: { display: "flex", gap: 10, flexWrap: "wrap" },
-  kpi: { flex: "1 1 120px", border: "1px solid #dbeafe", borderRadius: 14, padding: 12, background: "#f8fbff" },
+  kpi: {
+    flex: "1 1 120px",
+    border: "1px solid #dbeafe",
+    borderRadius: 14,
+    padding: 12,
+    background: "#f8fbff",
+  },
   kpiLabel: { fontSize: 12, color: "#334155", fontWeight: 800 },
-  kpiValue: { fontSize: 18, fontWeight: 950, marginTop: 6, color: "#0f172a" },
+  kpiValue: {
+    fontSize: 18,
+    fontWeight: 950,
+    marginTop: 6,
+    color: "#0f172a",
+  },
 
   comprovante: { display: "grid", gap: 12 },
-  loading: { color: "#334155", marginBottom: 10, fontWeight: 800 },
+  loading: {
+    color: "#334155",
+    marginBottom: 10,
+    fontWeight: 800,
+  },
 
-  toastWrap: { position: "fixed", top: 18, right: 18, zIndex: 9999, cursor: "pointer" },
-  toast: { width: 340, background: "white", border: "1px solid #dbeafe", borderRadius: 14, padding: 12, boxShadow: "0 10px 30px rgba(15, 23, 42, 0.15)" },
-  toastTitle: { fontSize: 13, fontWeight: 950, color: "#0f172a" },
-  toastMsg: { fontSize: 12, color: "#334155", marginTop: 6, lineHeight: 1.35 },
+  toastWrap: {
+    position: "fixed",
+    top: 18,
+    right: 18,
+    zIndex: 9999,
+    cursor: "pointer",
+  },
+  toast: {
+    width: 340,
+    background: "white",
+    border: "1px solid #dbeafe",
+    borderRadius: 14,
+    padding: 12,
+    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.15)",
+  },
+  toastTitle: {
+    fontSize: 13,
+    fontWeight: 950,
+    color: "#0f172a",
+  },
+  toastMsg: {
+    fontSize: 12,
+    color: "#334155",
+    marginTop: 6,
+    lineHeight: 1.35,
+  },
 
-  accordionWrap: { border: "1px solid #dbeafe", borderRadius: 14, overflow: "hidden", background: "#f8fbff", marginTop: 10 },
-  accordionHeader: { width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: 12, background: "#f8fbff", border: "none", color: "#0f172a", cursor: "pointer" },
+  accordionWrap: {
+    border: "1px solid #dbeafe",
+    borderRadius: 14,
+    overflow: "hidden",
+    background: "#f8fbff",
+    marginTop: 10,
+  },
+  accordionHeader: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    background: "#f8fbff",
+    border: "none",
+    color: "#0f172a",
+    cursor: "pointer",
+  },
   accordionHeaderOpen: { background: "#eff6ff" },
-  accordionBody: { padding: 12, borderTop: "1px solid #dbeafe", background: "white" },
+  accordionBody: {
+    padding: 12,
+    borderTop: "1px solid #dbeafe",
+    background: "white",
+  },
 
-  readonlyBox: { border: "1px solid #dbeafe", borderRadius: 14, padding: 12, background: "#f8fbff" },
-  readRow: { display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderBottom: "1px solid #eaf2ff" },
-  readLabel: { fontSize: 12, color: "#334155", fontWeight: 900, minWidth: 110 },
-  readValue: { fontSize: 13, color: "#0f172a", fontWeight: 800, textAlign: "right" },
+  readonlyBox: {
+    border: "1px solid #dbeafe",
+    borderRadius: 14,
+    padding: 12,
+    background: "#f8fbff",
+  },
+  readRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "8px 0",
+    borderBottom: "1px solid #eaf2ff",
+  },
+  readLabel: {
+    fontSize: 12,
+    color: "#334155",
+    fontWeight: 900,
+    minWidth: 110,
+  },
+  readValue: {
+    fontSize: 13,
+    color: "#0f172a",
+    fontWeight: 800,
+    textAlign: "right",
+  },
 };

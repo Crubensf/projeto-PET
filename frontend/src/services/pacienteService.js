@@ -1,23 +1,27 @@
-// pacienteService.js
 import api from "./api";
 
 export const pacienteService = {
-  list() {
+  async list() {
     return api.get("/api/pacientes");
   },
-  get(id) {
+
+  async get(id) {
     return api.get(`/api/pacientes/${id}`);
   },
-  getByCns(cns) {
+
+  async getByCns(cns) {
     return api.get(`/api/pacientes/by-cns/${cns}`);
   },
-  create(payload) {
+
+  async create(payload) {
     return api.post("/api/pacientes", payload);
   },
-  update(id, payload) {
+
+  async update(id, payload) {
     return api.put(`/api/pacientes/${id}`, payload);
   },
-  remove(id) {
-    return api.del(`/api/pacientes/${id}`);
-  },
+
+  async remove(id) {
+  return api.del(`/api/pacientes/${id}`);
+},
 };

@@ -1,57 +1,92 @@
-const API_ORIGIN = "";
+const RAW_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+const API_BASE = RAW_BASE.replace(/\/+$/, "");
 
-function buildUrl(path) {
-  if (typeof path !== "string" || !path.trim()) {
-    throw new Error(`apiFetch: path inválido (${String(path)})`);
+
+function readToken() {
+  if (typeof window === "undefined") return null;
+
+  const v = localStorage.getItem("access_token");
+  if (!v) return null;
+
+  
+  try {
+    const obj = JSON.parse(v);
+    return obj?.access_token || obj?.token || null;
+  } catch {
+    return v; 
   }
-
-  if (/^https?:\/\//i.test(path)) return path;
-
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-
-  if (!API_ORIGIN) return normalizedPath;
-
-  return new URL(normalizedPath, API_ORIGIN).toString();
 }
 
-export async function apiFetch(path, options = {}) {
-  const url = buildUrl(path);
 
-  const res = await fetch(url, {
+async function parseResponse(res) {
+  const ct = res.headers.get("content-type") || "";
+
+  if (ct.includes("application/json")) {
+    try {
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+
+function buildErrorMessage(res, data) {
+  if (data && typeof data === "object" && "detail" in data) {
+    const d = data.detail;
+    if (typeof d === "string") return d;
+    try {
+      return JSON.stringify(d);
+    } catch {
+      return `Erro ${res.status}`;
+    }
+  }
+
+  if (typeof data === "string" && data.trim()) return data;
+  return `Erro ${res.status}`;
+}
+
+
+async function request(path, { method = "GET", body, headers } = {}) {
+  const token = readToken();
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
     headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(headers || {}),
     },
-    ...options,
+    body: body ? JSON.stringify(body) : undefined,
   });
 
-  if (!res.ok) {
-    let message = `Erro ${res.status}`;
+  const data = await parseResponse(res);
 
-    try {
-      const data = await res.json();
-      if (data?.detail) {
-        message = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-      } else if (data?.message) {
-        message = data.message;
-      }
-    } catch {
-      // sem body JSON
-    }
-
-    throw new Error(message);
+  
+  if (res.status === 401) {
+    throw new Error(buildErrorMessage(res, data));
   }
 
-  if (res.status === 204) return null;
-  return res.json();
+  if (!res.ok) {
+    throw new Error(buildErrorMessage(res, data));
+  }
+
+  return data;
 }
 
-export const api = {
-  get: (p) => apiFetch(p),
-  post: (p, body) => apiFetch(p, { method: "POST", body: JSON.stringify(body) }),
-  put: (p, body) => apiFetch(p, { method: "PUT", body: JSON.stringify(body) }),
-  patch: (p, body) => apiFetch(p, { method: "PATCH", body: JSON.stringify(body) }),
-  del: (p) => apiFetch(p, { method: "DELETE" }),
+// API EXPORT
+
+const api = {
+  get: (path, opts) => request(path, { ...opts, method: "GET" }),
+  post: (path, body, opts) => request(path, { ...opts, method: "POST", body }),
+  put: (path, body, opts) => request(path, { ...opts, method: "PUT", body }),
+  del: (path, opts) => request(path, { ...opts, method: "DELETE" }),
 };
 
 export default api;

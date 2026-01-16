@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -22,9 +23,6 @@ def _parse_date(s: str) -> date:
 
 @router.get("/resumo")
 def resumo(db: Session = Depends(get_db)):
-    """
-    Métricas principais para cards.
-    """
     total_pacientes = db.scalar(select(func.count()).select_from(Paciente)) or 0
     total_profissionais = db.scalar(select(func.count()).select_from(Profissional)) or 0
     total_especialidades = db.scalar(select(func.count()).select_from(Especialidade)) or 0
@@ -59,10 +57,6 @@ def proximos(
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
-    """
-    Lista dos próximos agendamentos com informações para tabela do dashboard.
-    (join simples para o front não ter que cruzar ids)
-    """
     now = datetime.now()
 
     stmt = (
@@ -72,6 +66,8 @@ def proximos(
             Agendamento.modalidade,
             Paciente.nome.label("paciente_nome"),
             Profissional.nome.label("profissional_nome"),
+            Profissional.crm.label("profissional_crm"),
+            Profissional.crm_uf.label("profissional_crm_uf"),
             Especialidade.nome.label("especialidade_nome"),
             LocalAtendimento.nome.label("local_nome"),
         )
@@ -88,10 +84,12 @@ def proximos(
     return [
         {
             "id": r.id,
-            "inicio": r.inicio,
+            "inicio": r.inicio.isoformat() if r.inicio else None,
             "modalidade": r.modalidade,
             "paciente_nome": r.paciente_nome,
             "profissional_nome": r.profissional_nome,
+            "profissional_crm": r.profissional_crm,
+            "profissional_crm_uf": r.profissional_crm_uf,
             "especialidade_nome": r.especialidade_nome,
             "local_nome": r.local_nome,
         }
@@ -101,14 +99,10 @@ def proximos(
 
 @router.get("/agendamentos/por-dia")
 def agendamentos_por_dia(
-    start: str = Query(default=None, description="YYYY-MM-DD"),
-    end: str = Query(default=None, description="YYYY-MM-DD"),
+    start: Optional[str] = Query(default=None),
+    end: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    """
-    Série diária de agendamentos.
-    Retorna todos os dias no intervalo (incluindo dias com 0), para o gráfico não ficar 'furado'.
-    """
     hoje = date.today()
     start_date = _parse_date(start) if start else (hoje - timedelta(days=6))
     end_date = _parse_date(end) if end else hoje
@@ -119,7 +113,6 @@ def agendamentos_por_dia(
     start_dt = datetime.combine(start_date, time.min)
     end_dt = datetime.combine(end_date, time.max)
 
-    # Agrupa por data (usa DATE(inicio))
     stmt = (
         select(func.date(Agendamento.inicio).label("dia"), func.count().label("total"))
         .where(Agendamento.inicio >= start_dt, Agendamento.inicio <= end_dt)
@@ -130,7 +123,6 @@ def agendamentos_por_dia(
     rows = db.execute(stmt).all()
     mapa = {str(r.dia): int(r.total) for r in rows}
 
-    # Preenche dias faltando
     out = []
     d = start_date
     while d <= end_date:
@@ -143,14 +135,11 @@ def agendamentos_por_dia(
 
 @router.get("/agendamentos/por-especialidade")
 def agendamentos_por_especialidade(
-    start: str = Query(default=None, description="YYYY-MM-DD"),
-    end: str = Query(default=None, description="YYYY-MM-DD"),
+    start: Optional[str] = Query(default=None),
+    end: Optional[str] = Query(default=None),
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
-    """
-    Ranking por especialidade.
-    """
     hoje = date.today()
     start_date = _parse_date(start) if start else (hoje - timedelta(days=29))
     end_date = _parse_date(end) if end else hoje

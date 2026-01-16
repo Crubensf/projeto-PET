@@ -1,3 +1,4 @@
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,6 +7,10 @@ class Settings(BaseSettings):
     ENV: str = "dev"
     CORS_ORIGINS: str = "http://localhost:5173"
     DATABASE_URL: str
+
+    
+    SECRET_KEY: str = "chave-secreta-123456789"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     model_config = SettingsConfigDict(
         env_file=".env",

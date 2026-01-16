@@ -4,10 +4,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.security import get_current_user
 from app.modelos.paciente import Paciente
 from app.schemas.paciente import PacienteCreate, PacienteOut, PacienteUpdate
 
-router = APIRouter(prefix="/api/pacientes", tags=["Pacientes"])
+
+router = APIRouter(
+    prefix="/api/pacientes",
+    tags=["Pacientes"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 def only_digits(s: str) -> str:
@@ -26,7 +32,10 @@ def is_valid_tel(tel: str) -> bool:
 def buscar_por_cns(cns: str, db: Session = Depends(get_db)):
     cns_digits = only_digits(cns)
     if len(cns_digits) != 15:
-        raise HTTPException(status_code=422, detail="CNS deve ter exatamente 15 dígitos.")
+        raise HTTPException(
+            status_code=422,
+            detail="CNS deve ter exatamente 15 dígitos.",
+        )
 
     obj = db.scalar(select(Paciente).where(Paciente.cartao_sus == cns_digits))
     if not obj:
@@ -36,10 +45,15 @@ def buscar_por_cns(cns: str, db: Session = Depends(get_db)):
 
 @router.post("", response_model=PacienteOut, status_code=status.HTTP_201_CREATED)
 def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
-    # payload já vem normalizado/validado pelos validators do schema
-    exists = db.scalar(select(Paciente).where(Paciente.cartao_sus == payload.cartao_sus))
+   
+    exists = db.scalar(
+        select(Paciente).where(Paciente.cartao_sus == payload.cartao_sus)
+    )
     if exists:
-        raise HTTPException(status_code=409, detail="Já existe paciente com este cartão SUS.")
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe paciente com este cartão SUS.",
+        )
 
     obj = Paciente(**payload.model_dump())
     db.add(obj)
@@ -52,14 +66,19 @@ def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
 def listar(db: Session = Depends(get_db)):
     rows = list(db.scalars(select(Paciente).order_by(Paciente.nome)).all())
 
-    # Se existir registro inválido no banco, o response_model quebraria em 500.
-    # Melhor: levantar um erro explicando quais IDs corrigir.
-    invalid = [p for p in rows if not is_valid_cns(p.cartao_sus) or not is_valid_tel(p.telefone)]
+   
+    invalid = [
+        p for p in rows
+        if not is_valid_cns(p.cartao_sus) or not is_valid_tel(p.telefone)
+    ]
     if invalid:
         ids = [p.id for p in invalid][:20]
         raise HTTPException(
             status_code=500,
-            detail=f"Base contém pacientes inválidos (ids={ids}). Corrija CNS (15 dígitos) e telefone (10-11)."
+            detail=(
+                f"Base contém pacientes inválidos (ids={ids}). "
+                "Corrija CNS (15 dígitos) e telefone (10-11)."
+            ),
         )
 
     return rows
@@ -74,19 +93,28 @@ def detalhar(paciente_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{paciente_id}", response_model=PacienteOut)
-def atualizar(paciente_id: int, payload: PacienteUpdate, db: Session = Depends(get_db)):
+def atualizar(
+    paciente_id: int,
+    payload: PacienteUpdate,
+    db: Session = Depends(get_db),
+):
     obj = db.get(Paciente, paciente_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
 
-    # exclude_none=True evita sobrescrever campos com None
+
     data = payload.model_dump(exclude_none=True)
 
-    # se trocar CNS, checa duplicidade
+    
     if "cartao_sus" in data and data["cartao_sus"] != obj.cartao_sus:
-        exists = db.scalar(select(Paciente).where(Paciente.cartao_sus == data["cartao_sus"]))
+        exists = db.scalar(
+            select(Paciente).where(Paciente.cartao_sus == data["cartao_sus"])
+        )
         if exists:
-            raise HTTPException(status_code=409, detail="Já existe paciente com este cartão SUS.")
+            raise HTTPException(
+                status_code=409,
+                detail="Já existe paciente com este cartão SUS.",
+            )
 
     for k, v in data.items():
         setattr(obj, k, v)

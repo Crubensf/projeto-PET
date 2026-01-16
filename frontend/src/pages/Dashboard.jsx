@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { dashboardService } from "../services/dashboardService";
 
 function formatBRDateTime(iso) {
@@ -30,7 +30,7 @@ export default function Dashboard() {
     []
   );
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
@@ -54,11 +54,11 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [range]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   return (
     <div>
@@ -88,18 +88,36 @@ export default function Dashboard() {
 
       <Section title="Próximos agendamentos">
         <Table
-          cols={["Início", "Paciente", "Especialidade", "Profissional", "Local", "Modalidade"]}
+          cols={[
+            "Início",
+            "Paciente",
+            "Especialidade",
+            "Profissional",
+            "CRM",
+            "Local",
+            "Modalidade",
+            "Agendado por",
+          ]}
           rows={
             loading
               ? []
-              : proximos.map((a) => [
-                  formatBRDateTime(a.inicio),
-                  a.paciente_nome,
-                  a.especialidade_nome,
-                  a.profissional_nome,
-                  a.local_nome,
-                  a.modalidade,
-                ])
+              : proximos.map((a) => {
+                  const crm =
+                    a.profissional_crm && a.profissional_crm_uf
+                      ? `${a.profissional_crm}-${a.profissional_crm_uf}`
+                      : a.profissional_crm || "—";
+
+                  return [
+                    formatBRDateTime(a.inicio),
+                    a.paciente_nome,
+                    a.especialidade_nome,
+                    a.profissional_nome,
+                    crm,
+                    a.local_nome,
+                    a.modalidade,
+                    a.criado_por_nome || "—",
+                  ];
+                })
           }
           empty="Nenhum agendamento futuro."
         />
@@ -159,7 +177,9 @@ function Table({ cols, rows, empty }) {
         <thead>
           <tr>
             {cols.map((c) => (
-              <th key={c} style={styles.th}>{c}</th>
+              <th key={c} style={styles.th}>
+                {c}
+              </th>
             ))}
           </tr>
         </thead>
@@ -174,7 +194,9 @@ function Table({ cols, rows, empty }) {
             rows.map((r, i) => (
               <tr key={i}>
                 {r.map((v, j) => (
-                  <td key={j} style={styles.td}>{v}</td>
+                  <td key={j} style={styles.td}>
+                    {v}
+                  </td>
                 ))}
               </tr>
             ))
@@ -186,7 +208,12 @@ function Table({ cols, rows, empty }) {
 }
 
 const styles = {
-  header: { display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
+  },
   h1: { fontSize: 22, fontWeight: 900, color: "#0f172a" },
   h2: { fontSize: 13, color: "#334155", marginTop: 4 },
 

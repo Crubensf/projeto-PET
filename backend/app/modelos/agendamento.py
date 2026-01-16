@@ -18,8 +18,11 @@ class Agendamento(Base):
     local_id: Mapped[int] = mapped_column(ForeignKey("locais_atendimento.id"))
 
     inicio: Mapped["DateTime"] = mapped_column(DateTime(timezone=False), index=True)
-    modalidade: Mapped[str] = mapped_column(String(20), default="PRESENCIAL")  # PRESENCIAL|TELEMEDICINA
-    status: Mapped[str] = mapped_column(String(20), default="booked")  # booked|cancelled|fulfilled...
+    modalidade: Mapped[str] = mapped_column(String(20), default="PRESENCIAL")
+    status: Mapped[str] = mapped_column(String(20), default="booked")
+
+    criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_por = relationship("Usuario")
 
     paciente = relationship("Paciente")
     profissional = relationship("Profissional")
