@@ -25,8 +25,7 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],  
 )
 
-ALLOWED_STATUS = {"booked", "cancelled", "fulfilled"}
-
+ALLOWED_STATUS = {"agendado", "cancelado", "atendido"}
 
 
 # VALIDADORES INTERNOS
@@ -104,7 +103,7 @@ def criar(
     user: Usuario = Depends(get_current_user),
 ):
     data = payload.model_dump()
-    data["status"] = "booked"
+    data["status"] = "agendado"
     data["criado_por_id"] = user.id  
 
     _validar_fk(data, db)
@@ -154,7 +153,7 @@ def listar_hoje(db: Session = Depends(get_db)):
         .filter(
             Agendamento.inicio >= inicio_dia,
             Agendamento.inicio <= fim_dia,
-            Agendamento.status == "booked",
+            Agendamento.status == "agendado",
         )
         .order_by(Agendamento.inicio.asc())
         .all()

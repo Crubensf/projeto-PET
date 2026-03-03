@@ -19,7 +19,7 @@ class Agendamento(Base):
 
     inicio: Mapped["DateTime"] = mapped_column(DateTime(timezone=False), index=True)
     modalidade: Mapped[str] = mapped_column(String(20), default="PRESENCIAL")
-    status: Mapped[str] = mapped_column(String(20), default="booked")
+    status: Mapped[str] = mapped_column(String(20), default="agendado")
 
     criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     criado_por = relationship("Usuario")

@@ -308,7 +308,7 @@ export default function Agendamento() {
         local_id: Number(localId),
         inicio: selectedSlot,
         modalidade,
-        status: "booked",
+        status: "agendado",
       };
 
       const ag = await criarAgendamento(payloadAg);

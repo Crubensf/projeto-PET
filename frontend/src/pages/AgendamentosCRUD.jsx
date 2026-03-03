@@ -37,7 +37,7 @@ export default function AgendamentosCRUD() {
     local_id: "",
     inicio: "",
     modalidade: "PRESENCIAL",
-    status: "booked",
+    status: "agendado",
   });
   const [saving, setSaving] = useState(false);
 
@@ -124,7 +124,7 @@ export default function AgendamentosCRUD() {
       local_id: String(a.local_id ?? ""),
       inicio: toInputDateTime(a.inicio),
       modalidade: a.modalidade ?? "PRESENCIAL",
-      status: a.status ?? "booked",
+      status: a.status ?? "agendado",
     });
     setErr("");
   }
@@ -138,7 +138,7 @@ export default function AgendamentosCRUD() {
       local_id: "",
       inicio: "",
       modalidade: "PRESENCIAL",
-      status: "booked",
+      status: "agendado",
     });
   }
 
@@ -192,7 +192,7 @@ export default function AgendamentosCRUD() {
     if (!ok) return;
 
     try {
-      await api.put(`/api/agendamentos/${a.id}`, { status: "cancelled" });
+      await api.put(`/api/agendamentos/${a.id}`, { status: "cancelado" });
       await loadAll();
     } catch (e) {
       setErr(String(e?.message || e));
@@ -301,9 +301,9 @@ export default function AgendamentosCRUD() {
                 value={form.status}
                 onChange={(v) => setF("status", v)}
                 options={[
-                  { value: "booked", label: "Confirmado" },
-                  { value: "cancelled", label: "Cancelado" },
-                  { value: "fulfilled", label: "Realizado" },
+                  { value: "agendado", label: "Confirmado" },
+                  { value: "cancelado", label: "Cancelado" },
+                  { value: "atendido", label: "Atendido" },
                 ]}
               />
             </div>
@@ -340,7 +340,7 @@ export default function AgendamentosCRUD() {
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: 980,
+              minWidth: 1200,
             }}
           >
             <thead>

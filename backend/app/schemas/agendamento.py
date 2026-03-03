@@ -9,8 +9,14 @@ class AgendamentoBase(BaseModel):
     local_id: int
 
     inicio: datetime
-    modalidade: str = Field(default="PRESENCIAL", pattern="^(PRESENCIAL|TELEMEDICINA)$")
-    status: str = Field(default="booked")
+    modalidade: str = Field(default="PRESENCIAL",
+                            pattern="^(PRESENCIAL|TELEMEDICINA)$")
+
+
+    status: str = Field(
+    default="agendado",
+    pattern="^(agendado|cancelado|atendido)$"
+    )
 
 
 class AgendamentoCreate(AgendamentoBase):
@@ -23,7 +29,8 @@ class AgendamentoUpdate(BaseModel):
     especialidade_id: int | None = None
     local_id: int | None = None
     inicio: datetime | None = None
-    modalidade: str | None = Field(default=None, pattern="^(PRESENCIAL|TELEMEDICINA)$")
+    modalidade: str | None = Field(
+        default=None, pattern="^(PRESENCIAL|TELEMEDICINA)$")
     status: str | None = None
 
 

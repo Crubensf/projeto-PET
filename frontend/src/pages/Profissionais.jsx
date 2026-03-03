@@ -153,7 +153,7 @@ export default function Profissionais() {
       <form
         ref={formRef}
         onSubmit={submit}
-        style={{ ...styles.card, ...styles.stickyForm }}
+        style={{ ...styles.card }}
       >
         <div style={styles.formTopRow}>
           <div style={styles.formTitle}>

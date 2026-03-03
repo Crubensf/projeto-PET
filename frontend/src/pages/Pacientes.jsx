@@ -151,7 +151,7 @@ export default function Pacientes() {
       <form
         ref={formRef}
         onSubmit={submit}
-        style={{ ...styles.card, ...styles.stickyForm }}
+        style={{ ...styles.card}}
       >
         <div style={styles.formTopRow}>
           <div style={styles.formTitle}>
@@ -368,13 +368,6 @@ const styles = {
     marginTop: 16,
   },
 
-
-  stickyForm: {
-    position: "sticky",
-    top: 90,
-    zIndex: 10,
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.10)",
-  },
 
   formTopRow: {
     display: "flex",
