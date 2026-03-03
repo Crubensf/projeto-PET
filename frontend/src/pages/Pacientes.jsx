@@ -8,10 +8,15 @@ function onlyDigits(v) {
 function clampDigits(v, max) {
   return onlyDigits(v).slice(0, max);
 }
+function clampCPF(v) {
+  return onlyDigits(v).slice(0, 11);
+}
+
 
 function initialForm() {
   return {
     nome: "",
+    cpf: "",
     cartao_sus: "",
     telefone: "",
     data_nascimento: "",
@@ -37,7 +42,7 @@ export default function Pacientes() {
     const q = query.toLowerCase().trim();
     if (!q) return items;
     return items.filter((p) =>
-      [p.nome, p.municipio, p.cartao_sus, p.telefone].some((v) =>
+      [p.nome, p.municipio, p.cartao_sus, p.telefone, p.cpf].some((v) =>
         String(v ?? "").toLowerCase().includes(q)
       )
     );
@@ -63,6 +68,7 @@ export default function Pacientes() {
     setEditingId(p.id);
     setForm({
       nome: p.nome ?? "",
+      cpf: String(p.cpf ?? ""),
       cartao_sus: String(p.cartao_sus ?? ""),
       telefone: String(p.telefone ?? ""),
       data_nascimento: (p.data_nascimento ?? "").slice(0, 10),
@@ -175,6 +181,15 @@ export default function Pacientes() {
             value={form.nome_mae}
             onChange={(v) => setForm({ ...form, nome_mae: v })}
           />
+          <Field
+            label="CPF"
+            value={form.cpf}
+            inputMode="numeric"
+            maxLength={11}
+            onChange={(v) =>
+              setForm({ ...form, cpf: clampCPF(v) })
+            }
+          />
 
           <Field
             label="Cartão SUS"
@@ -237,6 +252,7 @@ export default function Pacientes() {
             <tr>
               <th style={styles.th}>Nome</th>
               <th style={styles.th}>CNS</th>
+              <th style={styles.th}>CPF</th>
               <th style={styles.th}>Telefone</th>
               <th style={styles.th}>Município</th>
               <th style={styles.th}>Ações</th>
@@ -260,6 +276,7 @@ export default function Pacientes() {
                 <tr key={p.id}>
                   <td style={styles.td}>{p.nome}</td>
                   <td style={styles.td}>{p.cartao_sus}</td>
+                  <td style={styles.td}>{p.cpf}</td>
                   <td style={styles.td}>{p.telefone}</td>
                   <td style={styles.td}>{p.municipio}</td>
                   <td style={styles.td}>
@@ -351,7 +368,7 @@ const styles = {
     marginTop: 16,
   },
 
-  
+
   stickyForm: {
     position: "sticky",
     top: 90,

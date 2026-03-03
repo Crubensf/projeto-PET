@@ -99,11 +99,11 @@ export default function AgendamentosCRUD() {
         api.get("/api/locais"),
       ]);
 
-      setItems(agRes.data || []);
-      setPacientes(pacRes.data || []);
-      setProfissionais(profRes.data || []);
-      setEspecialidades(espRes.data || []);
-      setLocais(locRes.data || []);
+      setItems(agRes || []);
+      setPacientes(pacRes || []);
+      setProfissionais(profRes || []);
+      setEspecialidades(espRes || []);
+      setLocais(locRes || []);
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {

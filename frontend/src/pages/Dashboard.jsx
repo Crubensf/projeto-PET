@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { dashboardService } from "../services/dashboardService";
+import InfoCard from "../components/InfoCard";
 
 function formatBRDateTime(iso) {
   return new Date(iso).toLocaleString("pt-BR");
 }
 
 function todayISO() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
 }
 
 function minusDaysISO(days) {
@@ -33,6 +33,7 @@ export default function Dashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     setErr("");
+
     try {
       const [r1, r2, r3, r4] = await Promise.all([
         dashboardService.resumo(),
@@ -61,32 +62,63 @@ export default function Dashboard() {
   }, [load]);
 
   return (
-    <div>
-      <div style={styles.header}>
+    <div className="space-y-8">
+
+      {/* HEADER */}
+      <div className="flex justify-between flex-wrap gap-4">
         <div>
-          <div style={styles.h1}>Dashboard</div>
-          <div style={styles.h2}>
+          <h1 className="text-2xl font-bold text-gray-800">
+            Dashboard
+          </h1>
+          <p className="text-gray-500">
             Visão geral do sistema de agendamento
-          </div>
+          </p>
         </div>
 
-        <button onClick={load} disabled={loading} style={styles.primaryBtn}>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition"
+        >
           {loading ? "Atualizando..." : "Atualizar"}
         </button>
       </div>
 
-      {err ? <div style={styles.alertErr}>{err}</div> : null}
+      {err && (
+        <div className="bg-red-100 border border-red-300 text-red-700 p-4 rounded-lg">
+          {err}
+        </div>
+      )}
 
-      <div style={styles.kpiGrid}>
-        <Kpi label="Pacientes" value={resumo?.total_pacientes} />
-        <Kpi label="Profissionais" value={resumo?.total_profissionais} />
-        <Kpi label="Especialidades" value={resumo?.total_especialidades} />
-        <Kpi label="Locais" value={resumo?.total_locais} />
-        <Kpi label="Agendamentos" value={resumo?.total_agendamentos} />
-        <Kpi label="Hoje" value={resumo?.agendamentos_hoje} />
-      </div>
+      {/* RESUMO GERAL */}
+      <InfoCard title="Resumo Geral">
+        <Table
+          cols={[
+            "Pacientes",
+            "Profissionais",
+            "Especialidades",
+            "Locais",
+            "Agendamentos",
+            "Hoje",
+          ]}
+          rows={
+            loading || !resumo
+              ? []
+              : [[
+                  resumo.total_pacientes,
+                  resumo.total_profissionais,
+                  resumo.total_especialidades,
+                  resumo.total_locais,
+                  resumo.total_agendamentos,
+                  resumo.agendamentos_hoje,
+                ]]
+          }
+          empty={loading ? "Carregando..." : "Sem dados."}
+        />
+      </InfoCard>
 
-      <Section title="Próximos agendamentos">
+      {/* PRÓXIMOS AGENDAMENTOS */}
+      <InfoCard title="Próximos agendamentos">
         <Table
           cols={[
             "Início",
@@ -119,82 +151,62 @@ export default function Dashboard() {
                   ];
                 })
           }
-          empty="Nenhum agendamento futuro."
+          empty={loading ? "Carregando..." : "Nenhum agendamento futuro."}
         />
-      </Section>
+      </InfoCard>
 
-      <div style={styles.twoCols}>
-        <Section title={`Agendamentos por dia (${range.start} → ${range.end})`}>
+      {/* TABELAS INFERIORES */}
+      <div className="grid md:grid-cols-2 gap-6">
+
+        <InfoCard title={`Agendamentos por dia (${range.start} → ${range.end})`}>
           <Table
             cols={["Data", "Total"]}
-            rows={
-              loading
-                ? []
-                : serie.map((r) => [r.data, r.total])
-            }
-            empty="Sem dados no período."
+            rows={loading ? [] : serie.map((r) => [new Date(r.data).toLocaleDateString("pt-BR"), r.total])}
+            empty={loading ? "Carregando..." : "Sem dados no período."}
           />
-        </Section>
+        </InfoCard>
 
-        <Section title="Especialidades mais procuradas (30 dias)">
+        <InfoCard title="Especialidades mais procuradas (30 dias)">
           <Table
             cols={["Especialidade", "Total"]}
-            rows={
-              loading
-                ? []
-                : ranking.map((r) => [r.especialidade, r.total])
-            }
-            empty="Sem dados."
+            rows={loading ? [] : ranking.map((r) => [r.especialidade, r.total])}
+            empty={loading ? "Carregando..." : "Sem dados."}
           />
-        </Section>
+        </InfoCard>
+
       </div>
     </div>
   );
 }
 
-function Kpi({ label, value }) {
-  return (
-    <div style={styles.kpi}>
-      <div style={styles.kpiLabel}>{label}</div>
-      <div style={styles.kpiValue}>{value ?? "—"}</div>
-    </div>
-  );
-}
-
-function Section({ title, children }) {
-  return (
-    <div style={{ marginTop: 18 }}>
-      <div style={styles.sectionTitle}>{title}</div>
-      {children}
-    </div>
-  );
-}
+/* ---------- TABELA PADRÃO ---------- */
 
 function Table({ cols, rows, empty }) {
   return (
-    <div style={styles.card}>
-      <table style={styles.table}>
-        <thead>
+    <div className="bg-white rounded-lg overflow-hidden text-center">
+      <table className="w-full border-collapse">
+        <thead className="bg-blue-50">
           <tr>
             {cols.map((c) => (
-              <th key={c} style={styles.th}>
+              <th key={c} className="text-center text-sm p-3 border-b">
                 {c}
               </th>
             ))}
           </tr>
         </thead>
+
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={cols.length} style={styles.tdMuted}>
+              <td colSpan={cols.length} className="p-4 text-center text-gray-500">
                 {empty}
               </td>
             </tr>
           ) : (
             rows.map((r, i) => (
-              <tr key={i}>
+              <tr key={i} className="border-b last:border-none hover:bg-gray-50">
                 {r.map((v, j) => (
-                  <td key={j} style={styles.td}>
+                  <td key={j} className="p-3 text-sm text-center font-semibold">
                     {v}
                   </td>
                 ))}
@@ -206,86 +218,3 @@ function Table({ cols, rows, empty }) {
     </div>
   );
 }
-
-const styles = {
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  h1: { fontSize: 22, fontWeight: 900, color: "#0f172a" },
-  h2: { fontSize: 13, color: "#334155", marginTop: 4 },
-
-  primaryBtn: {
-    background: "#1d4ed8",
-    color: "white",
-    border: "1px solid #1d4ed8",
-    borderRadius: 12,
-    padding: "10px 14px",
-    fontWeight: 900,
-    cursor: "pointer",
-  },
-
-  alertErr: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 12,
-    background: "#fff1f2",
-    border: "1px solid #fecaca",
-    color: "#991b1b",
-    fontWeight: 800,
-  },
-
-  kpiGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-    gap: 12,
-    marginTop: 16,
-  },
-  kpi: {
-    background: "white",
-    border: "1px solid #dbeafe",
-    borderRadius: 16,
-    padding: 14,
-  },
-  kpiLabel: { fontSize: 12, color: "#334155", fontWeight: 800 },
-  kpiValue: { fontSize: 26, fontWeight: 950, marginTop: 6 },
-
-  sectionTitle: { fontSize: 16, fontWeight: 900, marginBottom: 10 },
-
-  twoCols: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 16,
-    marginTop: 16,
-  },
-
-  card: {
-    background: "white",
-    border: "1px solid #dbeafe",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-
-  table: { width: "100%", borderCollapse: "collapse" },
-  th: {
-    textAlign: "left",
-    padding: 10,
-    fontSize: 12,
-    color: "#334155",
-    borderBottom: "1px solid #dbeafe",
-    background: "#f8fbff",
-  },
-  td: {
-    padding: 10,
-    borderBottom: "1px solid #eef6ff",
-    fontSize: 13,
-  },
-  tdMuted: {
-    padding: 14,
-    fontSize: 13,
-    color: "#64748b",
-    textAlign: "center",
-  },
-};

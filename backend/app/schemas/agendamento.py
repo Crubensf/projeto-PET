@@ -27,8 +27,20 @@ class AgendamentoUpdate(BaseModel):
     status: str | None = None
 
 
-class AgendamentoOut(AgendamentoBase):
+class AgendamentoOut(BaseModel):
     id: int
+    inicio: datetime
+    status: str
+
+    paciente_id: int
+    profissional_id: int
+    especialidade_id: int
+    local_id: int
+
+    # 🔥 CAMPOS ADICIONADOS
+    paciente_nome: str | None = None
+    profissional_nome: str | None = None
+    especialidade_nome: str | None = None
 
     class Config:
         from_attributes = True

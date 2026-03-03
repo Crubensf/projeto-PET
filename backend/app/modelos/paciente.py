@@ -9,7 +9,9 @@ class Paciente(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
     nome: Mapped[str] = mapped_column(String(140), index=True)
-    cartao_sus: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+    cartao_sus: Mapped[str] = mapped_column(String(30), unique=True, index=True, nullable=False)
+
+    cpf: Mapped[str] = mapped_column(String(11), unique=True, index=True, nullable=False)
 
     data_nascimento: Mapped["Date"] = mapped_column(Date)
     telefone: Mapped[str] = mapped_column(String(30))

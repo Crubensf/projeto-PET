@@ -15,7 +15,6 @@ from app.serializadores_fhir.paciente import paciente_para_fhir
 from app.serializadores_fhir.profissional import profissional_para_fhir
 from app.serializadores_fhir.local import local_para_fhir
 from app.serializadores_fhir.agendamento import agendamento_para_fhir
-from app.serializadores_fhir.bundle import bundle_comprovante
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -191,13 +190,3 @@ def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
 
     return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
 
-
-@router.get("/bundle/fhir/comprovante/{agendamento_id}")
-def get_bundle_comprovante_fhir(agendamento_id: int, db: Session = Depends(get_db)):
-    a = db.get(Agendamento, agendamento_id)
-    if not a:
-        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
-
-    _ = a.paciente, a.profissional, a.local, a.especialidade
-    bundle = bundle_comprovante(a.paciente, a.profissional, a.local, a)
-    return JSONResponse(content=bundle, media_type="application/fhir+json")

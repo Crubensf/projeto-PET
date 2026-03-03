@@ -48,11 +48,9 @@ export async function cadastrarPaciente(paciente) {
     telefone: onlyDigits(paciente.telefone),
   };
 
-  const res = await api.post("/api/pacientes", payload);
-  return res.data;
+  return await api.post("/api/pacientes", payload);
 }
 
 export async function criarAgendamento(payload) {
-  const res = await api.post("/api/agendamentos", payload);
-  return res.data;
+  return await api.post("/api/agendamentos", payload);
 }

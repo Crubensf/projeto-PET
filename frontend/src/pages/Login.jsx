@@ -45,7 +45,7 @@ export default function Login() {
         localStorage.getItem("access_token")
       );
 
-      navigate("/dashboard", { replace: true });
+      navigate("/", { replace: true });
     } catch (e) {
       setErr(e?.message || "Falha ao fazer login.");
     } finally {

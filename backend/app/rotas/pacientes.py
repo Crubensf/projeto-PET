@@ -28,6 +28,10 @@ def is_valid_tel(tel: str) -> bool:
     return bool(re.fullmatch(r"\d{10,11}", tel or ""))
 
 
+def is_valid_cpf(cpf: str) -> bool:
+    return bool(re.fullmatch(r"\d{11}", cpf or ""))
+
+
 @router.get("/by-cns/{cns}", response_model=PacienteOut)
 def buscar_por_cns(cns: str, db: Session = Depends(get_db)):
     cns_digits = only_digits(cns)
@@ -45,17 +49,50 @@ def buscar_por_cns(cns: str, db: Session = Depends(get_db)):
 
 @router.post("", response_model=PacienteOut, status_code=status.HTTP_201_CREATED)
 def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
-   
-    exists = db.scalar(
-        select(Paciente).where(Paciente.cartao_sus == payload.cartao_sus)
-    )
-    if exists:
+
+    cpf_digits = only_digits(payload.cpf)
+
+    if not is_valid_cpf(cpf_digits):
         raise HTTPException(
-            status_code=409,
-            detail="Já existe paciente com este cartão SUS.",
+            status_code=422,
+            detail="CPF deve conter exatamente 11 dígitos.",
         )
 
-    obj = Paciente(**payload.model_dump())
+    # CPF único
+    exists_cpf = db.scalar(
+        select(Paciente).where(Paciente.cpf == cpf_digits)
+    )
+    if exists_cpf:
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe paciente com este CPF.",
+        )
+
+    # CNS opcional, mas se vier precisa ser válido e único
+    if payload.cartao_sus:
+        cns_digits = only_digits(payload.cartao_sus)
+
+        if not is_valid_cns(cns_digits):
+            raise HTTPException(
+                status_code=422,
+                detail="CNS deve conter exatamente 15 dígitos.",
+            )
+
+        exists_cns = db.scalar(
+            select(Paciente).where(Paciente.cartao_sus == cns_digits)
+        )
+        if exists_cns:
+            raise HTTPException(
+                status_code=409,
+                detail="Já existe paciente com este cartão SUS.",
+            )
+
+    data = payload.model_dump()
+    data["cpf"] = cpf_digits
+    data["cartao_sus"] = only_digits(
+        payload.cartao_sus) if payload.cartao_sus else None
+
+    obj = Paciente(**data)
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -66,7 +103,6 @@ def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
 def listar(db: Session = Depends(get_db)):
     rows = list(db.scalars(select(Paciente).order_by(Paciente.nome)).all())
 
-   
     invalid = [
         p for p in rows
         if not is_valid_cns(p.cartao_sus) or not is_valid_tel(p.telefone)
@@ -80,6 +116,12 @@ def listar(db: Session = Depends(get_db)):
                 "Corrija CNS (15 dígitos) e telefone (10-11)."
             ),
         )
+    invalid = [
+        p for p in rows
+        if not is_valid_cpf(p.cpf)
+        or (p.cartao_sus and not is_valid_cns(p.cartao_sus))
+        or not is_valid_tel(p.telefone)
+    ]
 
     return rows
 
@@ -100,28 +142,81 @@ def atualizar(
 ):
     obj = db.get(Paciente, paciente_id)
     if not obj:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado.")
-
+        raise HTTPException(
+            status_code=404,
+            detail="Paciente não encontrado."
+        )
 
     data = payload.model_dump(exclude_none=True)
 
-    
-    if "cartao_sus" in data and data["cartao_sus"] != obj.cartao_sus:
-        exists = db.scalar(
-            select(Paciente).where(Paciente.cartao_sus == data["cartao_sus"])
-        )
-        if exists:
+    # ---------- CPF ----------
+    if "cpf" in data:
+        cpf_digits = only_digits(data["cpf"])
+
+        if not is_valid_cpf(cpf_digits):
             raise HTTPException(
-                status_code=409,
-                detail="Já existe paciente com este cartão SUS.",
+                status_code=422,
+                detail="CPF deve conter exatamente 11 dígitos."
             )
 
+        if cpf_digits != obj.cpf:
+            exists = db.scalar(
+                select(Paciente).where(Paciente.cpf == cpf_digits)
+            )
+            if exists:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Já existe paciente com este CPF."
+                )
+
+        data["cpf"] = cpf_digits
+
+    # ---------- CARTÃO SUS (opcional) ----------
+    if "cartao_sus" in data:
+        if data["cartao_sus"]:
+            cns_digits = only_digits(data["cartao_sus"])
+
+            if not is_valid_cns(cns_digits):
+                raise HTTPException(
+                    status_code=422,
+                    detail="CNS deve conter exatamente 15 dígitos."
+                )
+
+            if cns_digits != obj.cartao_sus:
+                exists = db.scalar(
+                    select(Paciente).where(Paciente.cartao_sus == cns_digits)
+                )
+                if exists:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Já existe paciente com este cartão SUS."
+                    )
+
+            data["cartao_sus"] = cns_digits
+        else:
+            # permite remover CNS
+            data["cartao_sus"] = None
+
+    # ---------- TELEFONE ----------
+    if "telefone" in data:
+        tel_digits = only_digits(data["telefone"])
+
+        if not is_valid_tel(tel_digits):
+            raise HTTPException(
+                status_code=422,
+                detail="Telefone deve ter 10 ou 11 dígitos."
+            )
+
+        data["telefone"] = tel_digits
+
+    # ---------- ATUALIZA CAMPOS ----------
     for k, v in data.items():
         setattr(obj, k, v)
 
     db.commit()
     db.refresh(obj)
     return obj
+
 
 
 @router.delete("/{paciente_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -132,3 +227,19 @@ def remover(paciente_id: int, db: Session = Depends(get_db)):
     db.delete(obj)
     db.commit()
     return None
+
+@router.get("/by-cpf/{cpf}", response_model=PacienteOut)
+def buscar_por_cpf(cpf: str, db: Session = Depends(get_db)):
+    cpf_digits = only_digits(cpf)
+
+    if not is_valid_cpf(cpf_digits):
+        raise HTTPException(
+            status_code=422,
+            detail="CPF deve conter exatamente 11 dígitos.",
+        )
+
+    obj = db.scalar(select(Paciente).where(Paciente.cpf == cpf_digits))
+    if not obj:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+
+    return obj

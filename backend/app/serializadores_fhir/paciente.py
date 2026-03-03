@@ -2,18 +2,44 @@ MOTHER_NAME_EXT_URL = "https://example.org/fhir/StructureDefinition/patient-moth
 
 
 def paciente_para_fhir(p):
-    return {
-        "resourceType": "Patient",
-        "id": str(p.id),
-        "identifier": [
+    identifiers = []
+
+    # CPF (sempre presente)
+    identifiers.append(
+        {
+            "use": "official",
+            "system": "https://gov.br/cpf",
+            "value": p.cpf,
+        }
+    )
+
+    # CNS (opcional)
+    if p.cartao_sus:
+        identifiers.append(
             {
                 "use": "official",
                 "system": "https://saude.gov.br/sus/cartao",
                 "value": p.cartao_sus,
             }
+        )
+
+    return {
+        "resourceType": "Patient",
+        "id": str(p.id),
+        "identifier": identifiers,
+        "name": [
+            {
+                "use": "official",
+                "text": p.nome,
+            }
         ],
-        "name": [{"use": "official", "text": p.nome}],
-        "telecom": [{"system": "phone", "value": p.telefone, "use": "mobile"}],
+        "telecom": [
+            {
+                "system": "phone",
+                "value": p.telefone,
+                "use": "mobile",
+            }
+        ],
         "birthDate": p.data_nascimento.isoformat(),
         "address": [
             {

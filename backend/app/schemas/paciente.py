@@ -24,8 +24,9 @@ def normalize_phone(digits: str) -> str:
 class PacienteBase(BaseModel):
     nome: str = Field(min_length=2, max_length=140)
 
-    # não use strict=True aqui: você quer aceitar entrada com máscara e normalizar nos validators
-    cartao_sus: str = Field(min_length=15, max_length=15)
+    cpf: str = Field(min_length=11, max_length=11)
+
+    cartao_sus: Optional[str] = Field(default=None, min_length=15, max_length=15)
 
     telefone: str = Field(min_length=10, max_length=11)
 
@@ -34,14 +35,27 @@ class PacienteBase(BaseModel):
     endereco: str = Field(min_length=2, max_length=200)
     nome_mae: str = Field(min_length=2, max_length=140)
 
+    # ---------- CPF ----------
+    @field_validator("cpf", mode="before")
+    @classmethod
+    def validar_cpf(cls, v: Any) -> str:
+        digits = only_digits(v)
+        if len(digits) != 11:
+            raise ValueError("cpf deve conter exatamente 11 dígitos.")
+        return digits
+
+    # ---------- CNS ----------
     @field_validator("cartao_sus", mode="before")
     @classmethod
-    def validar_cns(cls, v: Any) -> str:
+    def validar_cns(cls, v: Any) -> Optional[str]:
+        if v in (None, ""):
+            return None
         digits = only_digits(v)
         if len(digits) != 15:
             raise ValueError("cartao_sus deve conter exatamente 15 dígitos.")
         return digits
 
+    # ---------- TELEFONE ----------
     @field_validator("telefone", mode="before")
     @classmethod
     def validar_telefone(cls, v: Any) -> str:
@@ -50,6 +64,7 @@ class PacienteBase(BaseModel):
             raise ValueError("telefone deve conter 10 ou 11 dígitos (DDD + número).")
         return digits
 
+    # ---------- DATA ----------
     @field_validator("data_nascimento")
     @classmethod
     def validar_data_nascimento(cls, v: date) -> date:
@@ -64,6 +79,7 @@ class PacienteCreate(PacienteBase):
 
 class PacienteUpdate(BaseModel):
     nome: Optional[str] = Field(default=None, min_length=2, max_length=140)
+    cpf: Optional[str] = Field(default=None, min_length=11, max_length=11)
     cartao_sus: Optional[str] = Field(default=None, min_length=15, max_length=15)
     telefone: Optional[str] = Field(default=None, min_length=10, max_length=11)
     data_nascimento: Optional[date] = None
@@ -71,11 +87,21 @@ class PacienteUpdate(BaseModel):
     endereco: Optional[str] = Field(default=None, min_length=2, max_length=200)
     nome_mae: Optional[str] = Field(default=None, min_length=2, max_length=140)
 
+    @field_validator("cpf", mode="before")
+    @classmethod
+    def validar_cpf_update(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        digits = only_digits(v)
+        if len(digits) != 11:
+            raise ValueError("cpf deve conter exatamente 11 dígitos.")
+        return digits
+
     @field_validator("cartao_sus", mode="before")
     @classmethod
     def validar_cns_update(cls, v: Any) -> Any:
-        if v is None:
-            return v
+        if v in (None, ""):
+            return None
         digits = only_digits(v)
         if len(digits) != 15:
             raise ValueError("cartao_sus deve conter exatamente 15 dígitos.")

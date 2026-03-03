@@ -132,6 +132,53 @@ def listar(db: Session = Depends(get_db)):
     stmt = select(Agendamento).order_by(Agendamento.inicio.desc())
     return list(db.scalars(stmt).all())
 
+from datetime import datetime, time
+from sqlalchemy import and_
+
+from sqlalchemy.orm import joinedload
+
+@router.get("/hoje", response_model=list[AgendamentoOut])
+def listar_hoje(db: Session = Depends(get_db)):
+    hoje = datetime.now().date()
+
+    inicio_dia = datetime.combine(hoje, time.min)
+    fim_dia = datetime.combine(hoje, time.max)
+
+    ags = (
+        db.query(Agendamento)
+        .options(
+            joinedload(Agendamento.paciente),
+            joinedload(Agendamento.profissional),
+            joinedload(Agendamento.especialidade),
+        )
+        .filter(
+            Agendamento.inicio >= inicio_dia,
+            Agendamento.inicio <= fim_dia,
+            Agendamento.status == "booked",
+        )
+        .order_by(Agendamento.inicio.asc())
+        .all()
+    )
+
+    # 🔥 Monta resposta manualmente
+    resultado = []
+    for ag in ags:
+        resultado.append(
+            AgendamentoOut(
+                id=ag.id,
+                inicio=ag.inicio,
+                status=ag.status,
+                paciente_id=ag.paciente_id,
+                profissional_id=ag.profissional_id,
+                especialidade_id=ag.especialidade_id,
+                local_id=ag.local_id,
+                paciente_nome=ag.paciente.nome if ag.paciente else None,
+                profissional_nome=ag.profissional.nome if ag.profissional else None,
+                especialidade_nome=ag.especialidade.nome if ag.especialidade else None,
+            )
+        )
+
+    return resultado
 
 @router.get("/{agendamento_id}", response_model=AgendamentoOut)
 def detalhar(agendamento_id: int, db: Session = Depends(get_db)):

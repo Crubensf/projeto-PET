@@ -9,6 +9,7 @@ import Pacientes from "./pages/Pacientes";
 import Profissionais from "./pages/Profissionais";
 import Login from "./pages/Login";
 import UsuarioCadastro from "./pages/UsuarioCadastro";
+import PageHome from "./pages/PageHome";
 
 function RequireAuth({ children }) {
   const token =
@@ -17,6 +18,7 @@ function RequireAuth({ children }) {
   if (!token) {
     return <Navigate to="/login" replace />;
   }
+
   return children;
 }
 
@@ -28,7 +30,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/cadastro-usuario" element={<UsuarioCadastro />} />
 
-        {/* Rotas protegidas com layout */}
+        {/* Rotas protegidas */}
         <Route
           element={
             <RequireAuth>
@@ -36,7 +38,7 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<PageHome />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/agendamento" element={<Agendamento />} />
           <Route path="/agendamentos-crud" element={<AgendamentosCRUD />} />
@@ -44,9 +46,10 @@ export default function App() {
           <Route path="/profissionais" element={<Profissionais />} />
         </Route>
 
-        {/* Fallback: se nenhuma rota bater, manda para /login */}
+        {/* fallback */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
+      
     </BrowserRouter>
   );
 }
