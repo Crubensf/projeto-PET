@@ -3,7 +3,8 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.modelos.paciente import Paciente
@@ -15,6 +16,7 @@ from app.serializadores_fhir.paciente import paciente_para_fhir
 from app.serializadores_fhir.profissional import profissional_para_fhir
 from app.serializadores_fhir.local import local_para_fhir
 from app.serializadores_fhir.agendamento import agendamento_para_fhir
+from app.serializadores_fhir.bundle import montar_bundle_agendamento
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -171,6 +173,28 @@ def get_appointment_fhir(agendamento_id: int, db: Session = Depends(get_db)):
     return JSONResponse(content=agendamento_para_fhir(a), media_type="application/fhir+json")
 
 
+@router.get("/bundle/agendamento/{id}")
+def get_agendamento_bundle_fhir(id: int, db: Session = Depends(get_db)):
+    stmt = (
+        select(Agendamento)
+        .options(
+            joinedload(Agendamento.paciente),
+            joinedload(Agendamento.profissional),
+            joinedload(Agendamento.local),
+            joinedload(Agendamento.especialidade),
+        )
+        .where(Agendamento.id == id)
+    )
+    a = db.execute(stmt).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+
+    return JSONResponse(
+        content=montar_bundle_agendamento(a),
+        media_type="application/fhir+json",
+    )
+
+
 @router.get("/bundle/comprovante/{agendamento_id}")
 def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
     a = db.get(Agendamento, agendamento_id)
@@ -189,4 +213,3 @@ def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
     headers = {"Content-Disposition": f'inline; filename="{filename}"'}
 
     return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
-

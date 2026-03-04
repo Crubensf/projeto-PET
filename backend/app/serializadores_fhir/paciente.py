@@ -8,7 +8,7 @@ def paciente_para_fhir(p):
     identifiers.append(
         {
             "use": "official",
-            "system": "https://gov.br/cpf",
+            "system": "http://rnds.saude.gov.br/fhir/r4/NamingSystem/cpf",
             "value": p.cpf,
         }
     )
@@ -18,7 +18,7 @@ def paciente_para_fhir(p):
         identifiers.append(
             {
                 "use": "official",
-                "system": "https://saude.gov.br/sus/cartao",
+                "system": "http://rnds.saude.gov.br/fhir/r4/NamingSystem/cns",
                 "value": p.cartao_sus,
             }
         )
