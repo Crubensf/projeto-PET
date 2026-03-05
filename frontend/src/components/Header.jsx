@@ -106,7 +106,7 @@ export default function Header() {
             </NavItem>
 
             <NavItem to="/pacientes" icon={Users}>
-              Genrenciar Pacientes
+              Gerenciar Pacientes
             </NavItem>
 
             <NavItem to="/profissionais" icon={Stethoscope}>

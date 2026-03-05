@@ -1,7 +1,7 @@
 from io import BytesIO
-from datetime import datetime
+from datetime import date, datetime, time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -17,6 +17,7 @@ from app.serializadores_fhir.profissional import profissional_para_fhir
 from app.serializadores_fhir.local import local_para_fhir
 from app.serializadores_fhir.agendamento import agendamento_para_fhir
 from app.serializadores_fhir.bundle import montar_bundle_agendamento
+from app.serializadores_fhir.bundle_geral import montar_bundle_geral
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -208,6 +209,89 @@ def get_agendamento_bundle_fhir(id: int, db: Session = Depends(get_db)):
 
     try:
         bundle = montar_bundle_agendamento(a)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return JSONResponse(content=bundle, media_type="application/fhir+json")
+
+
+@router.get("/bundle/geral")
+def get_bundle_geral_fhir(
+    include_pacientes: bool = Query(default=True),
+    include_profissionais: bool = Query(default=True),
+    include_agendamentos: bool = Query(default=True),
+    include_locais: bool = Query(default=True),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    if start and end and start > end:
+        raise HTTPException(
+            status_code=400,
+            detail="Parâmetro start deve ser menor ou igual a end.",
+        )
+
+    pacientes = []
+    profissionais = []
+    agendamentos = []
+    locais = []
+
+    if include_pacientes:
+        pacientes = db.execute(
+            select(Paciente)
+            .order_by(Paciente.nome.asc())
+            .offset(offset)
+            .limit(limit)
+        ).scalars().all()
+
+    if include_profissionais:
+        profissionais = db.execute(
+            select(Profissional)
+            .order_by(Profissional.nome.asc())
+            .offset(offset)
+            .limit(limit)
+        ).scalars().all()
+
+    if include_agendamentos:
+        stmt_agendamentos = (
+            select(Agendamento)
+            .options(
+                joinedload(Agendamento.paciente),
+                joinedload(Agendamento.profissional),
+                joinedload(Agendamento.especialidade),
+                joinedload(Agendamento.local),
+            )
+            .order_by(Agendamento.inicio.desc())
+        )
+        if start:
+            stmt_agendamentos = stmt_agendamentos.where(
+                Agendamento.inicio >= datetime.combine(start, time.min)
+            )
+        if end:
+            stmt_agendamentos = stmt_agendamentos.where(
+                Agendamento.inicio <= datetime.combine(end, time.max)
+            )
+        agendamentos = db.execute(
+            stmt_agendamentos.offset(offset).limit(limit)
+        ).scalars().all()
+
+    if include_locais:
+        locais = db.execute(
+            select(LocalAtendimento)
+            .order_by(LocalAtendimento.nome.asc())
+            .offset(offset)
+            .limit(limit)
+        ).scalars().all()
+
+    try:
+        bundle = montar_bundle_geral(
+            pacientes=pacientes,
+            profissionais=profissionais,
+            agendamentos=agendamentos,
+            locais=locais,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
