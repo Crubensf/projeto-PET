@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.modelos.local_atendimento import LocalAtendimento
@@ -13,7 +14,11 @@ router = APIRouter(prefix="/api/locais", tags=["Locais"])
 def criar(payload: LocalCreate, db: Session = Depends(get_db)):
     obj = LocalAtendimento(**payload.model_dump())
     db.add(obj)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflito de integridade ao criar local.")
     db.refresh(obj)
     return obj
 
@@ -38,10 +43,21 @@ def atualizar(local_id: int, payload: LocalUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Local não encontrado.")
 
     data = payload.model_dump(exclude_unset=True)
+    for campo in ("nome", "municipio", "endereco"):
+        if campo in data and data[campo] is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Campo obrigatório não pode ser nulo: {campo}.",
+            )
+
     for k, v in data.items():
         setattr(obj, k, v)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflito de integridade ao atualizar local.")
     db.refresh(obj)
     return obj
 
@@ -52,5 +68,12 @@ def remover(local_id: int, db: Session = Depends(get_db)):
     if not obj:
         raise HTTPException(status_code=404, detail="Local não encontrado.")
     db.delete(obj)
-    db.commit()
-    return None
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Não é possível remover local com vínculos ativos.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

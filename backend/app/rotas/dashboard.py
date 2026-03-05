@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,13 @@ router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
 def _parse_date(s: str) -> date:
-    return date.fromisoformat(s)
+    try:
+        return date.fromisoformat(s)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Parâmetro de data inválido. Use YYYY-MM-DD.",
+        ) from exc
 
 
 @router.get("/resumo")

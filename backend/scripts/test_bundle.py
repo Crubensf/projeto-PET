@@ -15,6 +15,7 @@ if str(BACKEND_DIR) not in sys.path:
 os.chdir(BACKEND_DIR)
 
 from app.core.database import SessionLocal
+from app.core.bootstrap import bootstrap_all
 from app.modelos.agendamento import Agendamento
 from app.serializadores_fhir.bundle import montar_bundle_agendamento
 
@@ -91,6 +92,7 @@ def _validar_bundle(bundle: dict[str, Any]) -> None:
 
 
 def main() -> int:
+    bootstrap_all()
     db = SessionLocal()
     try:
         agendamento = _buscar_primeiro_agendamento(db)

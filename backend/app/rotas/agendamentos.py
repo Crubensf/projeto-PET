@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from datetime import datetime, time
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, and_
 from sqlalchemy.exc import IntegrityError
 
@@ -131,11 +133,6 @@ def listar(db: Session = Depends(get_db)):
     stmt = select(Agendamento).order_by(Agendamento.inicio.desc())
     return list(db.scalars(stmt).all())
 
-from datetime import datetime, time
-from sqlalchemy import and_
-
-from sqlalchemy.orm import joinedload
-
 @router.get("/hoje", response_model=list[AgendamentoOut])
 def listar_hoje(db: Session = Depends(get_db)):
     hoje = datetime.now().date()
@@ -192,13 +189,27 @@ def atualizar(
     agendamento_id: int,
     payload: AgendamentoUpdate,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
 ):
     obj = db.get(Agendamento, agendamento_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
 
     data = payload.model_dump(exclude_unset=True)
+    campos_obrigatorios = (
+        "paciente_id",
+        "profissional_id",
+        "especialidade_id",
+        "local_id",
+        "inicio",
+        "modalidade",
+        "status",
+    )
+    for campo in campos_obrigatorios:
+        if campo in data and data[campo] is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Campo obrigatório não pode ser nulo: {campo}.",
+            )
 
     if "status" in data and data["status"] is not None:
         if data["status"] not in ALLOWED_STATUS:
@@ -237,11 +248,17 @@ def atualizar(
 def remover(
     agendamento_id: int,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
 ):
     obj = db.get(Agendamento, agendamento_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
     db.delete(obj)
-    db.commit()
-    return None
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Não foi possível remover o agendamento.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

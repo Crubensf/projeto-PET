@@ -143,7 +143,11 @@ def get_patient_fhir(paciente_id: int, db: Session = Depends(get_db)):
     p = db.get(Paciente, paciente_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
-    return JSONResponse(content=paciente_para_fhir(p), media_type="application/fhir+json")
+    try:
+        resource = paciente_para_fhir(p)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse(content=resource, media_type="application/fhir+json")
 
 
 @router.get("/practitioner/{profissional_id}")
@@ -151,7 +155,11 @@ def get_practitioner_fhir(profissional_id: int, db: Session = Depends(get_db)):
     prof = db.get(Profissional, profissional_id)
     if not prof:
         raise HTTPException(status_code=404, detail="Profissional não encontrado.")
-    return JSONResponse(content=profissional_para_fhir(prof), media_type="application/fhir+json")
+    try:
+        resource = profissional_para_fhir(prof)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse(content=resource, media_type="application/fhir+json")
 
 
 @router.get("/location/{local_id}")
@@ -159,7 +167,11 @@ def get_location_fhir(local_id: int, db: Session = Depends(get_db)):
     loc = db.get(LocalAtendimento, local_id)
     if not loc:
         raise HTTPException(status_code=404, detail="Local não encontrado.")
-    return JSONResponse(content=local_para_fhir(loc), media_type="application/fhir+json")
+    try:
+        resource = local_para_fhir(loc)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse(content=resource, media_type="application/fhir+json")
 
 
 @router.get("/appointment/{agendamento_id}")
@@ -170,7 +182,12 @@ def get_appointment_fhir(agendamento_id: int, db: Session = Depends(get_db)):
 
     _ = a.paciente, a.profissional, a.especialidade, a.local
 
-    return JSONResponse(content=agendamento_para_fhir(a), media_type="application/fhir+json")
+    try:
+        resource = agendamento_para_fhir(a)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return JSONResponse(content=resource, media_type="application/fhir+json")
 
 
 @router.get("/bundle/agendamento/{id}")
@@ -189,10 +206,12 @@ def get_agendamento_bundle_fhir(id: int, db: Session = Depends(get_db)):
     if not a:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
 
-    return JSONResponse(
-        content=montar_bundle_agendamento(a),
-        media_type="application/fhir+json",
-    )
+    try:
+        bundle = montar_bundle_agendamento(a)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return JSONResponse(content=bundle, media_type="application/fhir+json")
 
 
 @router.get("/bundle/comprovante/{agendamento_id}")

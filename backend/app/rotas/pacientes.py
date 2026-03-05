@@ -1,7 +1,8 @@
 import re
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -32,6 +33,25 @@ def is_valid_cpf(cpf: str) -> bool:
     return bool(re.fullmatch(r"\d{11}", cpf or ""))
 
 
+def _paciente_invalido(p: Paciente) -> bool:
+    return (
+        not is_valid_cpf(getattr(p, "cpf", None))
+        or not is_valid_cns(p.cartao_sus)
+        or not is_valid_tel(p.telefone)
+    )
+
+
+def _assert_paciente_consistente(p: Paciente) -> None:
+    if _paciente_invalido(p):
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Registro de paciente inválido (id={p.id}). "
+                "Corrija CPF (11 dígitos), CNS (15 dígitos) e telefone (10-11)."
+            ),
+        )
+
+
 @router.get("/by-cns/{cns}", response_model=PacienteOut)
 def buscar_por_cns(cns: str, db: Session = Depends(get_db)):
     cns_digits = only_digits(cns)
@@ -44,6 +64,7 @@ def buscar_por_cns(cns: str, db: Session = Depends(get_db)):
     obj = db.scalar(select(Paciente).where(Paciente.cartao_sus == cns_digits))
     if not obj:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+    _assert_paciente_consistente(obj)
     return obj
 
 
@@ -68,33 +89,36 @@ def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
             detail="Já existe paciente com este CPF.",
         )
 
-    # CNS opcional, mas se vier precisa ser válido e único
-    if payload.cartao_sus:
-        cns_digits = only_digits(payload.cartao_sus)
-
-        if not is_valid_cns(cns_digits):
-            raise HTTPException(
-                status_code=422,
-                detail="CNS deve conter exatamente 15 dígitos.",
-            )
-
-        exists_cns = db.scalar(
-            select(Paciente).where(Paciente.cartao_sus == cns_digits)
+    cns_digits = only_digits(payload.cartao_sus)
+    if not is_valid_cns(cns_digits):
+        raise HTTPException(
+            status_code=422,
+            detail="CNS deve conter exatamente 15 dígitos.",
         )
-        if exists_cns:
-            raise HTTPException(
-                status_code=409,
-                detail="Já existe paciente com este cartão SUS.",
-            )
+
+    exists_cns = db.scalar(
+        select(Paciente).where(Paciente.cartao_sus == cns_digits)
+    )
+    if exists_cns:
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe paciente com este cartão SUS.",
+        )
 
     data = payload.model_dump()
     data["cpf"] = cpf_digits
-    data["cartao_sus"] = only_digits(
-        payload.cartao_sus) if payload.cartao_sus else None
+    data["cartao_sus"] = cns_digits
 
     obj = Paciente(**data)
     db.add(obj)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Conflito de unicidade para CPF/CNS.",
+        )
     db.refresh(obj)
     return obj
 
@@ -103,25 +127,16 @@ def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
 def listar(db: Session = Depends(get_db)):
     rows = list(db.scalars(select(Paciente).order_by(Paciente.nome)).all())
 
-    invalid = [
-        p for p in rows
-        if not is_valid_cns(p.cartao_sus) or not is_valid_tel(p.telefone)
-    ]
+    invalid = [p for p in rows if _paciente_invalido(p)]
     if invalid:
         ids = [p.id for p in invalid][:20]
         raise HTTPException(
             status_code=500,
             detail=(
                 f"Base contém pacientes inválidos (ids={ids}). "
-                "Corrija CNS (15 dígitos) e telefone (10-11)."
+                "Corrija CPF (11 dígitos), CNS (15 dígitos) e telefone (10-11)."
             ),
         )
-    invalid = [
-        p for p in rows
-        if not is_valid_cpf(p.cpf)
-        or (p.cartao_sus and not is_valid_cns(p.cartao_sus))
-        or not is_valid_tel(p.telefone)
-    ]
 
     return rows
 
@@ -131,6 +146,7 @@ def detalhar(paciente_id: int, db: Session = Depends(get_db)):
     obj = db.get(Paciente, paciente_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+    _assert_paciente_consistente(obj)
     return obj
 
 
@@ -147,7 +163,23 @@ def atualizar(
             detail="Paciente não encontrado."
         )
 
-    data = payload.model_dump(exclude_none=True)
+    data = payload.model_dump(exclude_unset=True)
+    campos_obrigatorios = (
+        "nome",
+        "cpf",
+        "cartao_sus",
+        "telefone",
+        "data_nascimento",
+        "municipio",
+        "endereco",
+        "nome_mae",
+    )
+    for campo in campos_obrigatorios:
+        if campo in data and data[campo] is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Campo obrigatório não pode ser nulo: {campo}.",
+            )
 
     # ---------- CPF ----------
     if "cpf" in data:
@@ -173,29 +205,31 @@ def atualizar(
 
     # ---------- CARTÃO SUS (opcional) ----------
     if "cartao_sus" in data:
-        if data["cartao_sus"]:
-            cns_digits = only_digits(data["cartao_sus"])
+        if data["cartao_sus"] in (None, ""):
+            raise HTTPException(
+                status_code=422,
+                detail="CNS não pode ser vazio.",
+            )
 
-            if not is_valid_cns(cns_digits):
+        cns_digits = only_digits(data["cartao_sus"])
+
+        if not is_valid_cns(cns_digits):
+            raise HTTPException(
+                status_code=422,
+                detail="CNS deve conter exatamente 15 dígitos."
+            )
+
+        if cns_digits != obj.cartao_sus:
+            exists = db.scalar(
+                select(Paciente).where(Paciente.cartao_sus == cns_digits)
+            )
+            if exists:
                 raise HTTPException(
-                    status_code=422,
-                    detail="CNS deve conter exatamente 15 dígitos."
+                    status_code=409,
+                    detail="Já existe paciente com este cartão SUS."
                 )
 
-            if cns_digits != obj.cartao_sus:
-                exists = db.scalar(
-                    select(Paciente).where(Paciente.cartao_sus == cns_digits)
-                )
-                if exists:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Já existe paciente com este cartão SUS."
-                    )
-
-            data["cartao_sus"] = cns_digits
-        else:
-            # permite remover CNS
-            data["cartao_sus"] = None
+        data["cartao_sus"] = cns_digits
 
     # ---------- TELEFONE ----------
     if "telefone" in data:
@@ -213,7 +247,14 @@ def atualizar(
     for k, v in data.items():
         setattr(obj, k, v)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Conflito de unicidade para CPF/CNS.",
+        )
     db.refresh(obj)
     return obj
 
@@ -225,8 +266,15 @@ def remover(paciente_id: int, db: Session = Depends(get_db)):
     if not obj:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
     db.delete(obj)
-    db.commit()
-    return None
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Não é possível remover paciente com vínculos ativos.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 @router.get("/by-cpf/{cpf}", response_model=PacienteOut)
 def buscar_por_cpf(cpf: str, db: Session = Depends(get_db)):
@@ -241,5 +289,6 @@ def buscar_por_cpf(cpf: str, db: Session = Depends(get_db)):
     obj = db.scalar(select(Paciente).where(Paciente.cpf == cpf_digits))
     if not obj:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+    _assert_paciente_consistente(obj)
 
     return obj

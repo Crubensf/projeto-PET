@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.modelos.especialidade import Especialidade
@@ -16,7 +17,11 @@ def criar(payload: EspecialidadeCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="Já existe especialidade com este código.")
     obj = Especialidade(**payload.model_dump())
     db.add(obj)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflito de unicidade para código da especialidade.")
     db.refresh(obj)
     return obj
 
@@ -41,6 +46,13 @@ def atualizar(especialidade_id: int, payload: EspecialidadeUpdate, db: Session =
         raise HTTPException(status_code=404, detail="Especialidade não encontrada.")
 
     data = payload.model_dump(exclude_unset=True)
+    for campo in ("codigo", "nome", "permite_telemedicina"):
+        if campo in data and data[campo] is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Campo obrigatório não pode ser nulo: {campo}.",
+            )
+
     if "codigo" in data and data["codigo"] != obj.codigo:
         exists = db.scalar(select(Especialidade).where(Especialidade.codigo == data["codigo"]))
         if exists:
@@ -49,7 +61,11 @@ def atualizar(especialidade_id: int, payload: EspecialidadeUpdate, db: Session =
     for k, v in data.items():
         setattr(obj, k, v)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflito de unicidade para código da especialidade.")
     db.refresh(obj)
     return obj
 
@@ -60,5 +76,12 @@ def remover(especialidade_id: int, db: Session = Depends(get_db)):
     if not obj:
         raise HTTPException(status_code=404, detail="Especialidade não encontrada.")
     db.delete(obj)
-    db.commit()
-    return None
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Não é possível remover especialidade com vínculos ativos.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

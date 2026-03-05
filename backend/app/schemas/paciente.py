@@ -26,7 +26,7 @@ class PacienteBase(BaseModel):
 
     cpf: str = Field(min_length=11, max_length=11)
 
-    cartao_sus: Optional[str] = Field(default=None, min_length=15, max_length=15)
+    cartao_sus: str = Field(min_length=15, max_length=15)
 
     telefone: str = Field(min_length=10, max_length=11)
 
@@ -47,9 +47,9 @@ class PacienteBase(BaseModel):
     # ---------- CNS ----------
     @field_validator("cartao_sus", mode="before")
     @classmethod
-    def validar_cns(cls, v: Any) -> Optional[str]:
+    def validar_cns(cls, v: Any) -> str:
         if v in (None, ""):
-            return None
+            raise ValueError("cartao_sus é obrigatório e deve conter 15 dígitos.")
         digits = only_digits(v)
         if len(digits) != 15:
             raise ValueError("cartao_sus deve conter exatamente 15 dígitos.")

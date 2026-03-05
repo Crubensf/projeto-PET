@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../services/api";
 
+const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:5000")
+  .replace(/\/+$/, "");
+
 function formatBR(iso) {
   const d = new Date(iso);
   return d.toLocaleString("pt-BR");
@@ -197,6 +200,14 @@ export default function AgendamentosCRUD() {
     } catch (e) {
       setErr(String(e?.message || e));
     }
+  }
+
+  function abrirBundleJson(id) {
+    window.open(`${API_BASE}/fhir/bundle/agendamento/${id}`, "_blank");
+  }
+
+  function abrirComprovantePdf(id) {
+    window.open(`${API_BASE}/fhir/bundle/comprovante/${id}`, "_blank");
   }
 
   return (
@@ -421,6 +432,18 @@ export default function AgendamentosCRUD() {
                           >
                             Remover
                           </button>
+                          <button
+                            onClick={() => abrirBundleJson(a.id)}
+                            style={styles.smallBtnInfo}
+                          >
+                            Bundle JSON
+                          </button>
+                          <button
+                            onClick={() => abrirComprovantePdf(a.id)}
+                            style={styles.smallBtnPdf}
+                          >
+                            PDF
+                          </button>
                         </div>
                       </Td>
                     </tr>
@@ -627,6 +650,24 @@ const styles = {
     border: "1px solid #fecaca",
     background: "#fff1f2",
     color: "#991b1b",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  smallBtnInfo: {
+    padding: "6px 10px",
+    borderRadius: 12,
+    border: "1px solid #bfdbfe",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  smallBtnPdf: {
+    padding: "6px 10px",
+    borderRadius: 12,
+    border: "1px solid #c7d2fe",
+    background: "#eef2ff",
+    color: "#3730a3",
     fontWeight: 900,
     cursor: "pointer",
   },

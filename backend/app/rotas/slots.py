@@ -26,6 +26,12 @@ def listar_slots_disponiveis(
     end_hour: int = Query(17, ge=1, le=23),
     db: Session = Depends(get_db),
 ):
+    if start_hour >= end_hour:
+        raise HTTPException(
+            status_code=422,
+            detail="Parâmetros inválidos: start_hour deve ser menor que end_hour.",
+        )
+
     prof = db.get(Profissional, profissional_id)
     if not prof:
         raise HTTPException(status_code=404, detail="Profissional não encontrado.")
@@ -40,7 +46,7 @@ def listar_slots_disponiveis(
         Agendamento.profissional_id == profissional_id,
         Agendamento.inicio >= inicio_janela,
         Agendamento.inicio < fim_janela,
-        Agendamento.status != "cancelled",
+        Agendamento.status != "cancelado",
     )
     ocupados = set(db.scalars(stmt).all())
 

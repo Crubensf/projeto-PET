@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -37,7 +38,14 @@ def criar(payload: ProfissionalCreate, db: Session = Depends(get_db)):
 
     obj = Profissional(**payload.model_dump())
     db.add(obj)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Conflito de unicidade para CRM/UF.",
+        )
     db.refresh(obj)
     return obj
 
@@ -73,6 +81,12 @@ def atualizar(profissional_id: int, payload: ProfissionalUpdate, db: Session = D
         raise HTTPException(status_code=404, detail="Profissional não encontrado.")
 
     data = payload.model_dump(exclude_unset=True)
+    for campo in ("nome", "especialidade_id"):
+        if campo in data and data[campo] is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Campo obrigatório não pode ser nulo: {campo}.",
+            )
 
     if "especialidade_id" in data and data["especialidade_id"] is not None:
         esp = db.get(Especialidade, data["especialidade_id"])
@@ -100,7 +114,14 @@ def atualizar(profissional_id: int, payload: ProfissionalUpdate, db: Session = D
     for k, v in data.items():
         setattr(obj, k, v)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Conflito de unicidade para CRM/UF.",
+        )
     db.refresh(obj)
     return obj
 
@@ -111,5 +132,12 @@ def remover(profissional_id: int, db: Session = Depends(get_db)):
     if not obj:
         raise HTTPException(status_code=404, detail="Profissional não encontrado.")
     db.delete(obj)
-    db.commit()
-    return None
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Não é possível remover profissional com vínculos ativos.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

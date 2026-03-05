@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -109,9 +109,80 @@ def _seed_profissionais_para_todas_especialidades(db: Session) -> None:
         db.add(Profissional(nome=nome_prof, especialidade_id=esp.id))
 
 
+def _ensure_schema_compatibility(db: Session) -> None:
+    """
+    Ajuste de compatibilidade mínimo para ambientes com schema legado.
+    """
+    bind = db.get_bind()
+    inspector = inspect(bind)
+
+    tables = set(inspector.get_table_names())
+
+    if "pacientes" in tables:
+        cols_pacientes = {c["name"] for c in inspector.get_columns("pacientes")}
+        if "cpf" not in cols_pacientes:
+            db.execute(text("ALTER TABLE pacientes ADD COLUMN cpf VARCHAR(11)"))
+            cols_pacientes = {c["name"] for c in inspect(bind).get_columns("pacientes")}
+
+        # Preenche CPF ausente em bases legadas para evitar falhas em consultas/serialização.
+        if "cpf" in cols_pacientes:
+            if bind.dialect.name == "postgresql":
+                db.execute(
+                    text(
+                        "UPDATE pacientes "
+                        "SET cpf = LPAD(CAST(id AS VARCHAR), 11, '0') "
+                        "WHERE cpf IS NULL OR cpf = ''"
+                    )
+                )
+            else:
+                db.execute(
+                    text(
+                        "UPDATE pacientes "
+                        "SET cpf = printf('%011d', id) "
+                        "WHERE cpf IS NULL OR cpf = ''"
+                    )
+                )
+
+        indexes = {idx["name"] for idx in inspector.get_indexes("pacientes")}
+        if "ix_pacientes_cpf" not in indexes:
+            db.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_pacientes_cpf "
+                    "ON pacientes (cpf)"
+                )
+            )
+
+    # Profissionais.ativo precisa ser booleano obrigatório para evitar None em resposta.
+    cols_profissionais = {
+        c["name"]: c for c in inspect(bind).get_columns("profissionais")
+    } if "profissionais" in tables else {}
+    if "ativo" in cols_profissionais:
+        db.execute(
+            text(
+                "UPDATE profissionais SET ativo = TRUE "
+                "WHERE ativo IS NULL"
+            )
+        )
+
+    if bind.dialect.name == "postgresql" and "pacientes" in tables:
+        cols_pacientes_atual = {
+            c["name"]: c for c in inspect(bind).get_columns("pacientes")
+        }
+        if "cpf" in cols_pacientes_atual and cols_pacientes_atual["cpf"]["nullable"]:
+            db.execute(text("ALTER TABLE pacientes ALTER COLUMN cpf SET NOT NULL"))
+
+        if "ativo" in cols_profissionais and cols_profissionais["ativo"]["nullable"]:
+            db.execute(
+                text("ALTER TABLE profissionais ALTER COLUMN ativo SET NOT NULL")
+            )
+
+
 def bootstrap_all() -> None:
     db = SessionLocal()
     try:
+        _ensure_schema_compatibility(db)
+        db.commit()
+
         _seed_especialidades(db)
         db.commit()
 

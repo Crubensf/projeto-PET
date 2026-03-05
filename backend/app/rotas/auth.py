@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.core.security import (
@@ -28,7 +29,11 @@ def signup(payload: UsuarioCreate, db: Session = Depends(get_db)):
         is_admin=payload.is_admin,
     )
     db.add(usuario)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Conflito de unicidade para o usuário.")
     db.refresh(usuario)
     return usuario
 
