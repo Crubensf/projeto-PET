@@ -1,16 +1,16 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { pacienteService } from "../services/pacienteService";
-
-function onlyDigits(v) {
-  return String(v ?? "").replace(/\D+/g, "");
-}
-function clampDigits(v, max) {
-  return onlyDigits(v).slice(0, max);
-}
-function clampCPF(v) {
-  return onlyDigits(v).slice(0, 11);
-}
+import {
+  clampText,
+  isValidCns,
+  isValidCpf,
+  isValidPhone,
+  sanitizeCnsDigits,
+  sanitizeCpfDigits,
+  sanitizePhoneDigits,
+  todayIsoDate,
+} from "../utils/validation";
 
 
 function initialForm() {
@@ -112,9 +112,26 @@ export default function Pacientes() {
 
     const payload = {
       ...form,
-      cartao_sus: clampDigits(form.cartao_sus, 15),
-      telefone: clampDigits(form.telefone, 11),
+      cpf: sanitizeCpfDigits(form.cpf),
+      cartao_sus: sanitizeCnsDigits(form.cartao_sus),
+      telefone: sanitizePhoneDigits(form.telefone),
     };
+
+    if (!isValidCpf(payload.cpf)) {
+      setSaving(false);
+      setErr("CPF deve conter exatamente 11 dígitos.");
+      return;
+    }
+    if (!isValidCns(payload.cartao_sus)) {
+      setSaving(false);
+      setErr("Cartão SUS (CNS) deve conter exatamente 15 dígitos.");
+      return;
+    }
+    if (!isValidPhone(payload.telefone)) {
+      setSaving(false);
+      setErr("Telefone deve conter 10 ou 11 dígitos (DDD + número).");
+      return;
+    }
 
     try {
       if (editingId) {
@@ -174,12 +191,14 @@ export default function Pacientes() {
           <Field
             label="Nome"
             value={form.nome}
-            onChange={(v) => setForm({ ...form, nome: v })}
+            maxLength={140}
+            onChange={(v) => setForm({ ...form, nome: clampText(v, 140) })}
           />
           <Field
             label="Nome da mãe"
             value={form.nome_mae}
-            onChange={(v) => setForm({ ...form, nome_mae: v })}
+            maxLength={140}
+            onChange={(v) => setForm({ ...form, nome_mae: clampText(v, 140) })}
           />
           <Field
             label="CPF"
@@ -187,7 +206,7 @@ export default function Pacientes() {
             inputMode="numeric"
             maxLength={11}
             onChange={(v) =>
-              setForm({ ...form, cpf: clampCPF(v) })
+              setForm({ ...form, cpf: sanitizeCpfDigits(v) })
             }
           />
 
@@ -197,7 +216,7 @@ export default function Pacientes() {
             inputMode="numeric"
             maxLength={15}
             onChange={(v) =>
-              setForm({ ...form, cartao_sus: clampDigits(v, 15) })
+              setForm({ ...form, cartao_sus: sanitizeCnsDigits(v) })
             }
           />
           <Field
@@ -206,7 +225,7 @@ export default function Pacientes() {
             inputMode="numeric"
             maxLength={11}
             onChange={(v) =>
-              setForm({ ...form, telefone: clampDigits(v, 11) })
+              setForm({ ...form, telefone: sanitizePhoneDigits(v) })
             }
           />
 
@@ -214,19 +233,22 @@ export default function Pacientes() {
             type="date"
             label="Nascimento"
             value={form.data_nascimento}
+            max={todayIsoDate()}
             onChange={(v) => setForm({ ...form, data_nascimento: v })}
           />
           <Field
             label="Município"
             value={form.municipio}
-            onChange={(v) => setForm({ ...form, municipio: v })}
+            maxLength={120}
+            onChange={(v) => setForm({ ...form, municipio: clampText(v, 120) })}
           />
 
           <Field
             label="Endereço"
             full
             value={form.endereco}
-            onChange={(v) => setForm({ ...form, endereco: v })}
+            maxLength={200}
+            onChange={(v) => setForm({ ...form, endereco: clampText(v, 200) })}
           />
         </div>
 
@@ -321,6 +343,7 @@ function Field({
   full,
   inputMode,
   maxLength,
+  max,
 }) {
   return (
     <label
@@ -335,6 +358,7 @@ function Field({
         value={value}
         inputMode={inputMode}
         maxLength={maxLength}
+        max={max}
         onChange={(e) => onChange(e.target.value)}
         style={styles.input}
       />

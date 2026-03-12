@@ -6,18 +6,14 @@ import {
   criarAgendamento,
 } from "../services/agendamentoService";
 import { useNavigate } from "react-router-dom";
+import {
+  isValidCns,
+  sanitizeCnsDigits,
+  toPositiveIntOrNull,
+} from "../utils/validation";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:5000";
 
-function onlyDigits(v) {
-  return String(v ?? "").replace(/\D+/g, "");
-}
-function clampDigits(v, maxLen) {
-  return onlyDigits(v).slice(0, maxLen);
-}
-function isValidCNS15(v) {
-  return onlyDigits(v).length === 15;
-}
 function toDateStr(d) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -220,9 +216,9 @@ export default function Agendamento() {
   const lastCnsTriedRef = useRef("");
 
   async function buscarPorCns() {
-    const cnsDigits = onlyDigits(cns);
+    const cnsDigits = sanitizeCnsDigits(cns);
 
-    if (!isValidCNS15(cnsDigits)) {
+    if (!isValidCns(cnsDigits)) {
       showToast("Validação", "CNS deve ter exatamente 15 dígitos.");
       return;
     }
@@ -298,14 +294,26 @@ export default function Agendamento() {
     const errS = validateSelecao();
     if (errS) return showToast("Seleção incompleta", errS);
 
+    const pacienteId = toPositiveIntOrNull(paciente?.id);
+    const profissionalIdInt = toPositiveIntOrNull(profissionalId);
+    const especialidadeIdInt = toPositiveIntOrNull(especialidadeId);
+    const localIdInt = toPositiveIntOrNull(localId);
+
+    if (!pacienteId || !profissionalIdInt || !especialidadeIdInt || !localIdInt) {
+      return showToast(
+        "Seleção inválida",
+        "IDs de paciente/profissional/especialidade/local inválidos."
+      );
+    }
+
     try {
       setLoading(true);
 
       const payloadAg = {
-        paciente_id: paciente.id,
-        profissional_id: Number(profissionalId),
-        especialidade_id: Number(especialidadeId),
-        local_id: Number(localId),
+        paciente_id: pacienteId,
+        profissional_id: profissionalIdInt,
+        especialidade_id: especialidadeIdInt,
+        local_id: localIdInt,
         inicio: selectedSlot,
         modalidade,
         status: "agendado",
@@ -399,7 +407,7 @@ export default function Agendamento() {
                 <Field
                   label="Cartão SUS (CNS — 15 dígitos)"
                   value={cns}
-                  onChange={(v) => setCns(clampDigits(v, 15))}
+                  onChange={(v) => setCns(sanitizeCnsDigits(v))}
                   inputMode="numeric"
                   maxLength={15}
                   hint="Digite somente números (15 dígitos)."

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../services/api";
+import { toPositiveIntOrNull } from "../utils/validation";
 
 const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:5000")
   .replace(/\/+$/, "");
@@ -154,12 +155,24 @@ export default function AgendamentosCRUD() {
 
     setSaving(true);
     setErr("");
+    const pacienteId = toPositiveIntOrNull(form.paciente_id);
+    const profissionalId = toPositiveIntOrNull(form.profissional_id);
+    const especialidadeId = toPositiveIntOrNull(form.especialidade_id);
+    const localId = toPositiveIntOrNull(form.local_id);
+
+    if (!pacienteId || !profissionalId || !especialidadeId || !localId) {
+      setSaving(false);
+      setErr(
+        "IDs inválidos no formulário. Selecione paciente, profissional, especialidade e local válidos."
+      );
+      return;
+    }
     try {
       const payload = {
-        paciente_id: Number(form.paciente_id),
-        profissional_id: Number(form.profissional_id),
-        especialidade_id: Number(form.especialidade_id),
-        local_id: Number(form.local_id),
+        paciente_id: pacienteId,
+        profissional_id: profissionalId,
+        especialidade_id: especialidadeId,
+        local_id: localId,
         inicio: toISOFromLocalInput(form.inicio),
         modalidade: form.modalidade,
         status: form.status,
@@ -202,12 +215,82 @@ export default function AgendamentosCRUD() {
     }
   }
 
-  function abrirBundleJson(id) {
-    window.open(`${API_BASE}/fhir/bundle/agendamento/${id}`, "_blank");
+  function normalizarBundleParaDownload(data, expectedType = "transaction") {
+    let payload = data;
+
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        throw new Error(
+          "Bundle inválido retornado pela API: JSON malformado (verifique vírgulas/duplicação)."
+        );
+      }
+    }
+
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("Bundle inválido retornado pela API: esperado objeto JSON único.");
+    }
+
+    if (payload.resourceType !== "Bundle") {
+      throw new Error("Payload inválido: resourceType deve ser 'Bundle'.");
+    }
+
+    if (expectedType && payload.type !== expectedType) {
+      throw new Error(
+        `Payload inválido: Bundle.type '${payload.type ?? "-"}' (esperado: '${expectedType}').`
+      );
+    }
+
+    try {
+      JSON.parse(JSON.stringify(payload));
+    } catch {
+      throw new Error("Bundle inválido retornado pela API: falha ao serializar JSON.");
+    }
+
+    return payload;
+  }
+
+  function abrirJsonFormatado(data, fileName) {
+    const bundle = normalizarBundleParaDownload(data, "transaction");
+    const content = `${JSON.stringify(bundle, null, 2)}\n`;
+    const blob = new Blob([content], {
+      type: "application/fhir+json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function abrirBundleJson(id) {
+    try {
+      setErr("");
+      const bundle = await api.get(`/fhir/bundle/agendamento/${id}`);
+      abrirJsonFormatado(bundle, `bundle_agendamento_${id}.json`);
+    } catch (e) {
+      setErr(String(e?.message || e));
+    }
   }
 
   function abrirComprovantePdf(id) {
     window.open(`${API_BASE}/fhir/bundle/comprovante/${id}`, "_blank");
+  }
+
+  async function abrirBundleGeralJson() {
+    try {
+      setErr("");
+      const bundle = await api.get("/fhir/bundle/geral/transaction");
+      abrirJsonFormatado(bundle, "bundle_geral_validador.json");
+    } catch (e) {
+      setErr(String(e?.message || e));
+    }
+  }
+
+  function abrirBundleGeralPdf() {
+    window.open(`${API_BASE}/fhir/bundle/geral/pdf`, "_blank");
   }
 
   return (
@@ -220,9 +303,23 @@ export default function AgendamentosCRUD() {
           </div>
         </div>
 
-        <button onClick={loadAll} disabled={loading} style={styles.primaryBtn}>
-          {loading ? "Carregando..." : "Recarregar"}
-        </button>
+        <div style={styles.headerActions}>
+          <button
+            onClick={abrirBundleGeralJson}
+            style={styles.secondaryBtn}
+          >
+            Bundle Geral JSON
+          </button>
+          <button
+            onClick={abrirBundleGeralPdf}
+            style={styles.secondaryBtn}
+          >
+            Bundle Geral (PDF)
+          </button>
+          <button onClick={loadAll} disabled={loading} style={styles.primaryBtn}>
+            {loading ? "Carregando..." : "Recarregar"}
+          </button>
+        </div>
       </div>
 
       {err ? (
@@ -571,6 +668,11 @@ const styles = {
     display: "flex",
     gap: 10,
     marginTop: 12,
+    flexWrap: "wrap",
+  },
+  headerActions: {
+    display: "flex",
+    gap: 8,
     flexWrap: "wrap",
   },
   primaryBtn: {

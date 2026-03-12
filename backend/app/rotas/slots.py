@@ -19,7 +19,7 @@ def _parse_date(value: str) -> date:
 
 @router.get("")
 def listar_slots_disponiveis(
-    profissional_id: int = Query(...),
+    profissional_id: int = Query(..., ge=1),
     date_str: str = Query(..., alias="date"),
     slot_minutes: int = Query(30, ge=10, le=120),
     start_hour: int = Query(8, ge=0, le=23),

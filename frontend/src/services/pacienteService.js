@@ -1,4 +1,5 @@
 import api from "./api";
+import { sanitizeCnsDigits, sanitizeCpfDigits } from "../utils/validation";
 
 export const pacienteService = {
   async list() {
@@ -10,7 +11,11 @@ export const pacienteService = {
   },
 
   async getByCns(cns) {
-    return api.get(`/api/pacientes/by-cns/${cns}`);
+    return api.get(`/api/pacientes/by-cns/${sanitizeCnsDigits(cns)}`);
+  },
+
+  async getByCpf(cpf) {
+    return api.get(`/api/pacientes/by-cpf/${sanitizeCpfDigits(cpf)}`);
   },
 
   async create(payload) {

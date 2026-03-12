@@ -1,9 +1,10 @@
 
 import api from "./api";
-
-function onlyDigits(v) {
-  return String(v ?? "").replace(/\D+/g, "");
-}
+import {
+  sanitizeCnsDigits,
+  sanitizeCpfDigits,
+  sanitizePhoneDigits,
+} from "../utils/validation";
 
 export async function carregarCatalogos() {
   const [especialidadesRes, locaisRes, profissionaisRes] = await Promise.all([
@@ -44,8 +45,9 @@ export async function carregarSlots(profissionalId, dateStr) {
 export async function cadastrarPaciente(paciente) {
   const payload = {
     ...paciente,
-    cartao_sus: onlyDigits(paciente.cartao_sus),
-    telefone: onlyDigits(paciente.telefone),
+    cpf: sanitizeCpfDigits(paciente.cpf),
+    cartao_sus: sanitizeCnsDigits(paciente.cartao_sus),
+    telefone: sanitizePhoneDigits(paciente.telefone),
   };
 
   return await api.post("/api/pacientes", payload);

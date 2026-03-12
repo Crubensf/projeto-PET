@@ -1,11 +1,20 @@
-import re
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.validators import (
+    is_valid_cns,
+    is_valid_cpf,
+    is_valid_phone,
+    sanitize_cns,
+    sanitize_cpf,
+    sanitize_phone,
+)
 from app.modelos.paciente import Paciente
 from app.schemas.paciente import PacienteCreate, PacienteOut, PacienteUpdate
 
@@ -16,28 +25,11 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
-
-def only_digits(s: str) -> str:
-    return re.sub(r"\D+", "", str(s or ""))
-
-
-def is_valid_cns(cns: str) -> bool:
-    return bool(re.fullmatch(r"\d{15}", cns or ""))
-
-
-def is_valid_tel(tel: str) -> bool:
-    return bool(re.fullmatch(r"\d{10,11}", tel or ""))
-
-
-def is_valid_cpf(cpf: str) -> bool:
-    return bool(re.fullmatch(r"\d{11}", cpf or ""))
-
-
 def _paciente_invalido(p: Paciente) -> bool:
     return (
         not is_valid_cpf(getattr(p, "cpf", None))
         or not is_valid_cns(p.cartao_sus)
-        or not is_valid_tel(p.telefone)
+        or not is_valid_phone(p.telefone)
     )
 
 
@@ -54,8 +46,9 @@ def _assert_paciente_consistente(p: Paciente) -> None:
 
 @router.get("/by-cns/{cns}", response_model=PacienteOut)
 def buscar_por_cns(cns: str, db: Session = Depends(get_db)):
-    cns_digits = only_digits(cns)
-    if len(cns_digits) != 15:
+    try:
+        cns_digits = sanitize_cns(cns)
+    except ValueError:
         raise HTTPException(
             status_code=422,
             detail="CNS deve ter exatamente 15 dígitos.",
@@ -70,10 +63,9 @@ def buscar_por_cns(cns: str, db: Session = Depends(get_db)):
 
 @router.post("", response_model=PacienteOut, status_code=status.HTTP_201_CREATED)
 def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
-
-    cpf_digits = only_digits(payload.cpf)
-
-    if not is_valid_cpf(cpf_digits):
+    try:
+        cpf_digits = sanitize_cpf(payload.cpf)
+    except ValueError:
         raise HTTPException(
             status_code=422,
             detail="CPF deve conter exatamente 11 dígitos.",
@@ -89,11 +81,20 @@ def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
             detail="Já existe paciente com este CPF.",
         )
 
-    cns_digits = only_digits(payload.cartao_sus)
-    if not is_valid_cns(cns_digits):
+    try:
+        cns_digits = sanitize_cns(payload.cartao_sus)
+    except ValueError:
         raise HTTPException(
             status_code=422,
             detail="CNS deve conter exatamente 15 dígitos.",
+        )
+
+    try:
+        telefone_digits = sanitize_phone(payload.telefone)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Telefone deve ter 10 ou 11 dígitos.",
         )
 
     exists_cns = db.scalar(
@@ -108,6 +109,7 @@ def criar(payload: PacienteCreate, db: Session = Depends(get_db)):
     data = payload.model_dump()
     data["cpf"] = cpf_digits
     data["cartao_sus"] = cns_digits
+    data["telefone"] = telefone_digits
 
     obj = Paciente(**data)
     db.add(obj)
@@ -142,7 +144,10 @@ def listar(db: Session = Depends(get_db)):
 
 
 @router.get("/{paciente_id}", response_model=PacienteOut)
-def detalhar(paciente_id: int, db: Session = Depends(get_db)):
+def detalhar(
+    paciente_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     obj = db.get(Paciente, paciente_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
@@ -152,8 +157,8 @@ def detalhar(paciente_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{paciente_id}", response_model=PacienteOut)
 def atualizar(
-    paciente_id: int,
     payload: PacienteUpdate,
+    paciente_id: Annotated[int, Path(gt=0)],
     db: Session = Depends(get_db),
 ):
     obj = db.get(Paciente, paciente_id)
@@ -183,9 +188,9 @@ def atualizar(
 
     # ---------- CPF ----------
     if "cpf" in data:
-        cpf_digits = only_digits(data["cpf"])
-
-        if not is_valid_cpf(cpf_digits):
+        try:
+            cpf_digits = sanitize_cpf(data["cpf"])
+        except ValueError:
             raise HTTPException(
                 status_code=422,
                 detail="CPF deve conter exatamente 11 dígitos."
@@ -211,9 +216,9 @@ def atualizar(
                 detail="CNS não pode ser vazio.",
             )
 
-        cns_digits = only_digits(data["cartao_sus"])
-
-        if not is_valid_cns(cns_digits):
+        try:
+            cns_digits = sanitize_cns(data["cartao_sus"])
+        except ValueError:
             raise HTTPException(
                 status_code=422,
                 detail="CNS deve conter exatamente 15 dígitos."
@@ -233,9 +238,9 @@ def atualizar(
 
     # ---------- TELEFONE ----------
     if "telefone" in data:
-        tel_digits = only_digits(data["telefone"])
-
-        if not is_valid_tel(tel_digits):
+        try:
+            tel_digits = sanitize_phone(data["telefone"])
+        except ValueError:
             raise HTTPException(
                 status_code=422,
                 detail="Telefone deve ter 10 ou 11 dígitos."
@@ -261,7 +266,10 @@ def atualizar(
 
 
 @router.delete("/{paciente_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remover(paciente_id: int, db: Session = Depends(get_db)):
+def remover(
+    paciente_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     obj = db.get(Paciente, paciente_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
@@ -278,9 +286,9 @@ def remover(paciente_id: int, db: Session = Depends(get_db)):
 
 @router.get("/by-cpf/{cpf}", response_model=PacienteOut)
 def buscar_por_cpf(cpf: str, db: Session = Depends(get_db)):
-    cpf_digits = only_digits(cpf)
-
-    if not is_valid_cpf(cpf_digits):
+    try:
+        cpf_digits = sanitize_cpf(cpf)
+    except ValueError:
         raise HTTPException(
             status_code=422,
             detail="CPF deve conter exatamente 11 dígitos.",

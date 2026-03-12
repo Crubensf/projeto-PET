@@ -18,6 +18,7 @@ from app.core.database import SessionLocal
 from app.core.bootstrap import bootstrap_all
 from app.modelos.agendamento import Agendamento
 from app.serializadores_fhir.bundle import montar_bundle_agendamento
+from app.serializadores_fhir.bundle_geral import validate_bundle_for_hapi_operation
 
 
 class ValidacaoErro(Exception):
@@ -68,9 +69,18 @@ def _validar_bundle(bundle: dict[str, Any]) -> None:
 
     for i, entry in enumerate(entries):
         _assert(isinstance(entry, dict), f"entry[{i}] não é objeto")
-        _assert("fullUrl" in entry, f"entry[{i}] sem fullUrl")
-        _assert("request" in entry, f"entry[{i}] sem request")
-        _assert("resource" in entry, f"entry[{i}] sem resource")
+        full_url = entry.get("fullUrl")
+        request = entry.get("request")
+        resource = entry.get("resource")
+        _assert(isinstance(full_url, str), f"entry[{i}] sem fullUrl")
+        _assert(full_url.startswith("urn:uuid:"), f"entry[{i}] fullUrl inválido: {full_url!r}")
+        _assert(isinstance(request, dict), f"entry[{i}] sem request")
+        _assert(isinstance(resource, dict), f"entry[{i}] sem resource")
+        _assert(request.get("method") == "POST", f"entry[{i}] request.method inválido")
+        _assert(
+            request.get("url") == resource.get("resourceType"),
+            f"entry[{i}] request.url inválido",
+        )
 
     appointment = next(
         (e.get("resource") for e in entries if isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") == "Appointment"),
@@ -81,11 +91,17 @@ def _validar_bundle(bundle: dict[str, Any]) -> None:
     participantes = appointment.get("participant", [])
     _assert(isinstance(participantes, list), "Appointment.participant não é lista")
 
+    full_urls = {entry.get("fullUrl") for entry in entries if isinstance(entry, dict)}
+
     for i, part in enumerate(participantes):
         referencia = part.get("actor", {}).get("reference")
         _assert(
             isinstance(referencia, str) and referencia.startswith("urn:uuid:"),
             f"Appointment.participant[{i}].actor.reference inválido: {referencia!r}",
+        )
+        _assert(
+            referencia in full_urls,
+            f"Appointment.participant[{i}].actor.reference sem entry correspondente: {referencia!r}",
         )
 
     _validar_sem_none(bundle)
@@ -99,6 +115,10 @@ def main() -> int:
         _assert(agendamento is not None, "Nenhum agendamento encontrado no banco")
 
         bundle = montar_bundle_agendamento(agendamento)
+        validate_bundle_for_hapi_operation(
+            bundle=bundle,
+            operation="post_transaction",
+        )
         _validar_bundle(bundle)
 
         print("OK")

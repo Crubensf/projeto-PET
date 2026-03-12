@@ -19,6 +19,7 @@ from app.modelos.agendamento import Agendamento
 from app.modelos.paciente import Paciente
 from app.modelos.profissional import Profissional
 from app.serializadores_fhir.bundle import montar_bundle_agendamento
+from app.serializadores_fhir.bundle_geral import validate_bundle_for_hapi_operation
 
 
 class HealthCheckError(Exception):
@@ -63,6 +64,10 @@ def main() -> int:
             _fail("falha ao buscar agendamento: nenhum registro encontrado")
 
         bundle = montar_bundle_agendamento(agendamento)
+        validate_bundle_for_hapi_operation(
+            bundle=bundle,
+            operation="post_transaction",
+        )
 
         if not isinstance(bundle, dict):
             _fail("falha ao gerar bundle: retorno não é objeto JSON")

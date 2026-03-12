@@ -25,7 +25,7 @@ class Profissional(Base):
     crm: Mapped[str | None] = mapped_column(String(20), nullable=True)
     crm_uf: Mapped[str | None] = mapped_column(String(2), nullable=True)
 
-    telefone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    telefone: Mapped[str | None] = mapped_column(String(11), nullable=True)
     email: Mapped[str | None] = mapped_column(String(140), nullable=True)
 
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

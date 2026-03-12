@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -52,7 +54,7 @@ def criar(payload: ProfissionalCreate, db: Session = Depends(get_db)):
 
 @router.get("", response_model=list[ProfissionalOut])
 def listar(
-    especialidade_id: int | None = Query(default=None),
+    especialidade_id: int | None = Query(default=None, gt=0),
     somente_ativos: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
@@ -67,7 +69,10 @@ def listar(
 
 
 @router.get("/{profissional_id}", response_model=ProfissionalOut)
-def detalhar(profissional_id: int, db: Session = Depends(get_db)):
+def detalhar(
+    profissional_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     obj = db.get(Profissional, profissional_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Profissional não encontrado.")
@@ -75,7 +80,11 @@ def detalhar(profissional_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{profissional_id}", response_model=ProfissionalOut)
-def atualizar(profissional_id: int, payload: ProfissionalUpdate, db: Session = Depends(get_db)):
+def atualizar(
+    payload: ProfissionalUpdate,
+    profissional_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     obj = db.get(Profissional, profissional_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Profissional não encontrado.")
@@ -127,7 +136,10 @@ def atualizar(profissional_id: int, payload: ProfissionalUpdate, db: Session = D
 
 
 @router.delete("/{profissional_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remover(profissional_id: int, db: Session = Depends(get_db)):
+def remover(
+    profissional_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     obj = db.get(Profissional, profissional_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Profissional não encontrado.")

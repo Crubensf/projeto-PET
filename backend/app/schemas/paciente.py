@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-import re
 from datetime import date
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic.config import ConfigDict
 
-
-def only_digits(value: Any) -> str:
-    if value is None:
-        return ""
-    return re.sub(r"\D+", "", str(value))
-
-
-def normalize_phone(digits: str) -> str:
-    # remove 55 se vier junto (Brasil)
-    if len(digits) in (12, 13) and digits.startswith("55"):
-        digits = digits[2:]
-    return digits
+from app.core.validators import (
+    sanitize_cns,
+    sanitize_cpf,
+    sanitize_phone,
+    validate_not_future_date,
+)
 
 
 class PacienteBase(BaseModel):
@@ -39,10 +32,7 @@ class PacienteBase(BaseModel):
     @field_validator("cpf", mode="before")
     @classmethod
     def validar_cpf(cls, v: Any) -> str:
-        digits = only_digits(v)
-        if len(digits) != 11:
-            raise ValueError("cpf deve conter exatamente 11 dígitos.")
-        return digits
+        return sanitize_cpf(v)
 
     # ---------- CNS ----------
     @field_validator("cartao_sus", mode="before")
@@ -50,27 +40,19 @@ class PacienteBase(BaseModel):
     def validar_cns(cls, v: Any) -> str:
         if v in (None, ""):
             raise ValueError("cartao_sus é obrigatório e deve conter 15 dígitos.")
-        digits = only_digits(v)
-        if len(digits) != 15:
-            raise ValueError("cartao_sus deve conter exatamente 15 dígitos.")
-        return digits
+        return sanitize_cns(v)
 
     # ---------- TELEFONE ----------
     @field_validator("telefone", mode="before")
     @classmethod
     def validar_telefone(cls, v: Any) -> str:
-        digits = normalize_phone(only_digits(v))
-        if len(digits) not in (10, 11):
-            raise ValueError("telefone deve conter 10 ou 11 dígitos (DDD + número).")
-        return digits
+        return sanitize_phone(v)
 
     # ---------- DATA ----------
     @field_validator("data_nascimento")
     @classmethod
     def validar_data_nascimento(cls, v: date) -> date:
-        if v > date.today():
-            raise ValueError("data_nascimento não pode ser no futuro.")
-        return v
+        return validate_not_future_date(v, field_name="data_nascimento")
 
 
 class PacienteCreate(PacienteBase):
@@ -92,39 +74,28 @@ class PacienteUpdate(BaseModel):
     def validar_cpf_update(cls, v: Any) -> Any:
         if v is None:
             return v
-        digits = only_digits(v)
-        if len(digits) != 11:
-            raise ValueError("cpf deve conter exatamente 11 dígitos.")
-        return digits
+        return sanitize_cpf(v)
 
     @field_validator("cartao_sus", mode="before")
     @classmethod
     def validar_cns_update(cls, v: Any) -> Any:
         if v in (None, ""):
             return None
-        digits = only_digits(v)
-        if len(digits) != 15:
-            raise ValueError("cartao_sus deve conter exatamente 15 dígitos.")
-        return digits
+        return sanitize_cns(v)
 
     @field_validator("telefone", mode="before")
     @classmethod
     def validar_telefone_update(cls, v: Any) -> Any:
         if v is None:
             return v
-        digits = normalize_phone(only_digits(v))
-        if len(digits) not in (10, 11):
-            raise ValueError("telefone deve conter 10 ou 11 dígitos (DDD + número).")
-        return digits
+        return sanitize_phone(v)
 
     @field_validator("data_nascimento")
     @classmethod
     def validar_data_nascimento_update(cls, v: Optional[date]) -> Optional[date]:
         if v is None:
             return v
-        if v > date.today():
-            raise ValueError("data_nascimento não pode ser no futuro.")
-        return v
+        return validate_not_future_date(v, field_name="data_nascimento")
 
 
 class PacienteOut(PacienteBase):

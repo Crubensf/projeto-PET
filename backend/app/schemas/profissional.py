@@ -1,24 +1,12 @@
 from typing import Any, Optional
-import re
 from pydantic import BaseModel, Field, EmailStr, field_validator
 
-
-def only_digits(v: Any) -> str:
-    if v is None:
-        return ""
-    return re.sub(r"\D+", "", str(v))
-
-
-def normalize_phone(digits: str) -> str:
-    # Remove DDI 55 se vier com 12 ou 13 dígitos iniciando com 55
-    if len(digits) in (12, 13) and digits.startswith("55"):
-        digits = digits[2:]
-    return digits
+from app.core.validators import only_digits, sanitize_phone
 
 
 class ProfissionalBase(BaseModel):
     nome: str = Field(min_length=2, max_length=120)
-    especialidade_id: int
+    especialidade_id: int = Field(gt=0)
 
     crm: str | None = Field(default=None, max_length=20)
     crm_uf: str | None = Field(default=None, min_length=2, max_length=2)
@@ -50,10 +38,7 @@ class ProfissionalBase(BaseModel):
     def validar_telefone(cls, v: Any) -> Any:
         if v is None:
             return v
-        digits = normalize_phone(only_digits(v))
-        if len(digits) not in (10, 11):
-            raise ValueError("telefone deve conter 10 ou 11 dígitos.")
-        return digits
+        return sanitize_phone(v)
 
 
 class ProfissionalCreate(ProfissionalBase):
@@ -62,7 +47,7 @@ class ProfissionalCreate(ProfissionalBase):
 
 class ProfissionalUpdate(BaseModel):
     nome: str | None = Field(default=None, min_length=2, max_length=120)
-    especialidade_id: int | None = None
+    especialidade_id: int | None = Field(default=None, gt=0)
 
     crm: str | None = Field(default=None, max_length=20)
     crm_uf: str | None = Field(default=None, min_length=2, max_length=2)
@@ -92,10 +77,7 @@ class ProfissionalUpdate(BaseModel):
     def validar_telefone_up(cls, v: Any) -> Any:
         if v is None:
             return v
-        digits = normalize_phone(only_digits(v))
-        if len(digits) not in (10, 11):
-            raise ValueError("telefone deve conter 10 ou 11 dígitos.")
-        return digits
+        return sanitize_phone(v)
 
 
 class ProfissionalOut(BaseModel):

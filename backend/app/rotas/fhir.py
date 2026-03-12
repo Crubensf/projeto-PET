@@ -1,7 +1,9 @@
+import json
 from io import BytesIO
 from datetime import date, datetime, time
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -17,7 +19,11 @@ from app.serializadores_fhir.profissional import profissional_para_fhir
 from app.serializadores_fhir.local import local_para_fhir
 from app.serializadores_fhir.agendamento import agendamento_para_fhir
 from app.serializadores_fhir.bundle import montar_bundle_agendamento
-from app.serializadores_fhir.bundle_geral import montar_bundle_geral
+from app.serializadores_fhir.bundle_geral import (
+    build_searchset_bundle,
+    build_transaction_bundle,
+    validate_bundle_for_hapi_operation,
+)
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -41,6 +47,193 @@ def _fmt_dt_br(dt) -> str:
 
 def _safe(v) -> str:
     return "-" if v is None else str(v)
+
+
+def _buscar_dados_bundle_geral(
+    db: Session,
+    include_pacientes: bool,
+    include_profissionais: bool,
+    include_agendamentos: bool,
+    include_locais: bool,
+    limit: int,
+    offset: int,
+    start: date | None,
+    end: date | None,
+):
+    if start and end and start > end:
+        raise HTTPException(
+            status_code=400,
+            detail="Parâmetro start deve ser menor ou igual a end.",
+        )
+
+    pacientes = []
+    profissionais = []
+    agendamentos = []
+    locais = []
+
+    if include_pacientes:
+        pacientes = db.execute(
+            select(Paciente)
+            .order_by(Paciente.nome.asc())
+            .offset(offset)
+            .limit(limit)
+        ).scalars().all()
+
+    if include_profissionais:
+        profissionais = db.execute(
+            select(Profissional)
+            .order_by(Profissional.nome.asc())
+            .offset(offset)
+            .limit(limit)
+        ).scalars().all()
+
+    if include_agendamentos:
+        stmt_agendamentos = (
+            select(Agendamento)
+            .options(
+                joinedload(Agendamento.paciente),
+                joinedload(Agendamento.profissional),
+                joinedload(Agendamento.especialidade),
+                joinedload(Agendamento.local),
+            )
+            .order_by(Agendamento.inicio.desc())
+        )
+        if start:
+            stmt_agendamentos = stmt_agendamentos.where(
+                Agendamento.inicio >= datetime.combine(start, time.min)
+            )
+        if end:
+            stmt_agendamentos = stmt_agendamentos.where(
+                Agendamento.inicio <= datetime.combine(end, time.max)
+            )
+        agendamentos = db.execute(
+            stmt_agendamentos.offset(offset).limit(limit)
+        ).scalars().all()
+
+    if include_locais:
+        locais = db.execute(
+            select(LocalAtendimento)
+            .order_by(LocalAtendimento.nome.asc())
+            .offset(offset)
+            .limit(limit)
+        ).scalars().all()
+
+    return pacientes, profissionais, agendamentos, locais
+
+
+def _build_filtered_searchset_bundle(
+    db: Session,
+    include_pacientes: bool,
+    include_profissionais: bool,
+    include_agendamentos: bool,
+    include_locais: bool,
+    limit: int,
+    offset: int,
+    start: date | None,
+    end: date | None,
+):
+    pacientes, profissionais, agendamentos, locais = _buscar_dados_bundle_geral(
+        db=db,
+        include_pacientes=include_pacientes,
+        include_profissionais=include_profissionais,
+        include_agendamentos=include_agendamentos,
+        include_locais=include_locais,
+        limit=limit,
+        offset=offset,
+        start=start,
+        end=end,
+    )
+    try:
+        return build_searchset_bundle(
+            pacientes=pacientes,
+            profissionais=profissionais,
+            agendamentos=agendamentos,
+            locais=locais,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _build_filtered_transaction_bundle(
+    db: Session,
+    include_pacientes: bool,
+    include_profissionais: bool,
+    include_agendamentos: bool,
+    include_locais: bool,
+    limit: int,
+    offset: int,
+    start: date | None,
+    end: date | None,
+):
+    pacientes, profissionais, agendamentos, locais = _buscar_dados_bundle_geral(
+        db=db,
+        include_pacientes=include_pacientes,
+        include_profissionais=include_profissionais,
+        include_agendamentos=include_agendamentos,
+        include_locais=include_locais,
+        limit=limit,
+        offset=offset,
+        start=start,
+        end=end,
+    )
+    try:
+        bundle = build_transaction_bundle(
+            pacientes=pacientes,
+            profissionais=profissionais,
+            agendamentos=agendamentos,
+            locais=locais,
+        )
+        # Guarda técnica: payload destinado a POST no HAPI deve ser transacional.
+        validate_bundle_for_hapi_operation(
+            bundle=bundle,
+            operation="post_transaction",
+        )
+        return bundle
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def gerar_pdf_bundle_geral(bundle: dict) -> bytes:
+    texto = json.dumps(bundle, ensure_ascii=False, indent=2)
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    _, height = A4
+
+    margem_esquerda = 36
+    margem_superior = height - 40
+    margem_inferior = 35
+    altura_linha = 10
+    y = margem_superior
+
+    c.setTitle("Bundle Geral FHIR")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(margem_esquerda, y, "Bundle Geral FHIR (searchset)")
+    y -= 16
+    c.setFont("Helvetica", 9)
+    c.drawString(
+        margem_esquerda,
+        y,
+        f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
+    )
+    y -= 14
+    c.setFont("Courier", 8)
+
+    for linha in texto.splitlines():
+        partes = [linha[i : i + 118] for i in range(0, len(linha), 118)] or [""]
+        for parte in partes:
+            if y <= margem_inferior:
+                c.showPage()
+                y = margem_superior
+                c.setFont("Courier", 8)
+            c.drawString(margem_esquerda, y, parte)
+            y -= altura_linha
+
+    c.showPage()
+    c.save()
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
 
 
 def gerar_pdf_comprovante(a: Agendamento) -> bytes:
@@ -140,7 +333,10 @@ def gerar_pdf_comprovante(a: Agendamento) -> bytes:
 
 
 @router.get("/patient/{paciente_id}")
-def get_patient_fhir(paciente_id: int, db: Session = Depends(get_db)):
+def get_patient_fhir(
+    paciente_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     p = db.get(Paciente, paciente_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paciente não encontrado.")
@@ -152,7 +348,10 @@ def get_patient_fhir(paciente_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/practitioner/{profissional_id}")
-def get_practitioner_fhir(profissional_id: int, db: Session = Depends(get_db)):
+def get_practitioner_fhir(
+    profissional_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     prof = db.get(Profissional, profissional_id)
     if not prof:
         raise HTTPException(status_code=404, detail="Profissional não encontrado.")
@@ -164,7 +363,10 @@ def get_practitioner_fhir(profissional_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/location/{local_id}")
-def get_location_fhir(local_id: int, db: Session = Depends(get_db)):
+def get_location_fhir(
+    local_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     loc = db.get(LocalAtendimento, local_id)
     if not loc:
         raise HTTPException(status_code=404, detail="Local não encontrado.")
@@ -176,7 +378,10 @@ def get_location_fhir(local_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/appointment/{agendamento_id}")
-def get_appointment_fhir(agendamento_id: int, db: Session = Depends(get_db)):
+def get_appointment_fhir(
+    agendamento_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     a = db.get(Agendamento, agendamento_id)
     if not a:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
@@ -192,7 +397,10 @@ def get_appointment_fhir(agendamento_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/bundle/agendamento/{id}")
-def get_agendamento_bundle_fhir(id: int, db: Session = Depends(get_db)):
+def get_agendamento_bundle_fhir(
+    id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     stmt = (
         select(Agendamento)
         .options(
@@ -209,6 +417,11 @@ def get_agendamento_bundle_fhir(id: int, db: Session = Depends(get_db)):
 
     try:
         bundle = montar_bundle_agendamento(a)
+        # Evita regressão estrutural no bundle transacional individual.
+        validate_bundle_for_hapi_operation(
+            bundle=bundle,
+            operation="post_transaction",
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -216,7 +429,8 @@ def get_agendamento_bundle_fhir(id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/bundle/geral")
-def get_bundle_geral_fhir(
+@router.get("/bundle/geral/searchset")
+def get_bundle_geral_searchset_fhir(
     include_pacientes: bool = Query(default=True),
     include_profissionais: bool = Query(default=True),
     include_agendamentos: bool = Query(default=True),
@@ -227,79 +441,86 @@ def get_bundle_geral_fhir(
     end: date | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    if start and end and start > end:
-        raise HTTPException(
-            status_code=400,
-            detail="Parâmetro start deve ser menor ou igual a end.",
-        )
+    bundle = _build_filtered_searchset_bundle(
+        db=db,
+        include_pacientes=include_pacientes,
+        include_profissionais=include_profissionais,
+        include_agendamentos=include_agendamentos,
+        include_locais=include_locais,
+        limit=limit,
+        offset=offset,
+        start=start,
+        end=end,
+    )
 
-    pacientes = []
-    profissionais = []
-    agendamentos = []
-    locais = []
+    return JSONResponse(
+        content=bundle,
+        media_type="application/fhir+json",
+        headers={"X-FHIR-Bundle-Purpose": "searchset-listing-only"},
+    )
 
-    if include_pacientes:
-        pacientes = db.execute(
-            select(Paciente)
-            .order_by(Paciente.nome.asc())
-            .offset(offset)
-            .limit(limit)
-        ).scalars().all()
 
-    if include_profissionais:
-        profissionais = db.execute(
-            select(Profissional)
-            .order_by(Profissional.nome.asc())
-            .offset(offset)
-            .limit(limit)
-        ).scalars().all()
-
-    if include_agendamentos:
-        stmt_agendamentos = (
-            select(Agendamento)
-            .options(
-                joinedload(Agendamento.paciente),
-                joinedload(Agendamento.profissional),
-                joinedload(Agendamento.especialidade),
-                joinedload(Agendamento.local),
-            )
-            .order_by(Agendamento.inicio.desc())
-        )
-        if start:
-            stmt_agendamentos = stmt_agendamentos.where(
-                Agendamento.inicio >= datetime.combine(start, time.min)
-            )
-        if end:
-            stmt_agendamentos = stmt_agendamentos.where(
-                Agendamento.inicio <= datetime.combine(end, time.max)
-            )
-        agendamentos = db.execute(
-            stmt_agendamentos.offset(offset).limit(limit)
-        ).scalars().all()
-
-    if include_locais:
-        locais = db.execute(
-            select(LocalAtendimento)
-            .order_by(LocalAtendimento.nome.asc())
-            .offset(offset)
-            .limit(limit)
-        ).scalars().all()
-
-    try:
-        bundle = montar_bundle_geral(
-            pacientes=pacientes,
-            profissionais=profissionais,
-            agendamentos=agendamentos,
-            locais=locais,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+@router.get("/bundle/geral/transaction")
+def get_bundle_geral_transaction_fhir(
+    include_pacientes: bool = Query(default=True),
+    include_profissionais: bool = Query(default=True),
+    include_agendamentos: bool = Query(default=True),
+    include_locais: bool = Query(default=True),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    bundle = _build_filtered_transaction_bundle(
+        db=db,
+        include_pacientes=include_pacientes,
+        include_profissionais=include_profissionais,
+        include_agendamentos=include_agendamentos,
+        include_locais=include_locais,
+        limit=limit,
+        offset=offset,
+        start=start,
+        end=end,
+    )
 
     return JSONResponse(content=bundle, media_type="application/fhir+json")
 
 
+@router.get("/bundle/geral/pdf")
+def get_bundle_geral_pdf(
+    include_pacientes: bool = Query(default=True),
+    include_profissionais: bool = Query(default=True),
+    include_agendamentos: bool = Query(default=True),
+    include_locais: bool = Query(default=True),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    bundle = _build_filtered_searchset_bundle(
+        db=db,
+        include_pacientes=include_pacientes,
+        include_profissionais=include_profissionais,
+        include_agendamentos=include_agendamentos,
+        include_locais=include_locais,
+        limit=limit,
+        offset=offset,
+        start=start,
+        end=end,
+    )
+
+    pdf_bytes = gerar_pdf_bundle_geral(bundle)
+    headers = {"Content-Disposition": 'inline; filename="bundle_geral_fhir.pdf"'}
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+
 @router.get("/bundle/comprovante/{agendamento_id}")
-def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
+def get_comprovante_pdf(
+    agendamento_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     a = db.get(Agendamento, agendamento_id)
     if not a:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")

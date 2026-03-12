@@ -21,7 +21,8 @@ function readToken() {
 async function parseResponse(res) {
   const ct = res.headers.get("content-type") || "";
 
-  if (ct.includes("application/json")) {
+  // Inclui application/fhir+json e application/json+fhir.
+  if (ct.toLowerCase().includes("json")) {
     try {
       return await res.json();
     } catch {

@@ -1,6 +1,11 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../services/api";
+import {
+  clampDigits,
+  clampText,
+  toPositiveIntOrNull,
+} from "../utils/validation";
 
 function initialForm() {
   return {
@@ -90,11 +95,23 @@ export default function Profissionais() {
     setSaving(true);
     setErr("");
 
+    const especialidadeId = toPositiveIntOrNull(form.especialidade_id);
+    if (!especialidadeId) {
+      setSaving(false);
+      setErr("Selecione uma especialidade válida.");
+      return;
+    }
+
     const payload = {
-      nome: form.nome,
-      especialidade_id: Number(form.especialidade_id),
-      crm: form.crm || null,
-      crm_uf: form.crm_uf || null,
+      nome: clampText(form.nome, 120),
+      especialidade_id: especialidadeId,
+      crm: form.crm ? clampDigits(form.crm, 20) : null,
+      crm_uf: form.crm_uf
+        ? String(form.crm_uf)
+            .replace(/[^a-zA-Z]/g, "")
+            .slice(0, 2)
+            .toUpperCase()
+        : null,
       ativo: Boolean(form.ativo),
     };
 
@@ -175,7 +192,8 @@ export default function Profissionais() {
           <Field
             label="Nome"
             value={form.nome}
-            onChange={(v) => setForm({ ...form, nome: v })}
+            maxLength={120}
+            onChange={(v) => setForm({ ...form, nome: clampText(v, 120) })}
           />
 
           <FieldSelect
@@ -191,14 +209,24 @@ export default function Profissionais() {
           <Field
             label="CRM"
             value={form.crm}
-            onChange={(v) => setForm({ ...form, crm: v })}
+            inputMode="numeric"
+            maxLength={20}
+            onChange={(v) => setForm({ ...form, crm: clampDigits(v, 20) })}
           />
 
           <Field
             label="UF do CRM"
             value={form.crm_uf}
             maxLength={2}
-            onChange={(v) => setForm({ ...form, crm_uf: v.toUpperCase() })}
+            onChange={(v) =>
+              setForm({
+                ...form,
+                crm_uf: String(v)
+                  .replace(/[^a-zA-Z]/g, "")
+                  .slice(0, 2)
+                  .toUpperCase(),
+              })
+            }
           />
 
           <label
@@ -310,13 +338,21 @@ export default function Profissionais() {
   );
 }
 
-function Field({ label, value, onChange, type = "text", maxLength }) {
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  maxLength,
+  inputMode,
+}) {
   return (
     <label style={styles.field}>
       <div style={styles.label}>{label}</div>
       <input
         type={type}
         value={value}
+        inputMode={inputMode}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
         style={styles.input}

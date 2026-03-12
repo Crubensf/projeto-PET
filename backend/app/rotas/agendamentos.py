@@ -1,6 +1,7 @@
 from datetime import datetime, time
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, and_
 from sqlalchemy.exc import IntegrityError
@@ -177,7 +178,10 @@ def listar_hoje(db: Session = Depends(get_db)):
     return resultado
 
 @router.get("/{agendamento_id}", response_model=AgendamentoOut)
-def detalhar(agendamento_id: int, db: Session = Depends(get_db)):
+def detalhar(
+    agendamento_id: Annotated[int, Path(gt=0)],
+    db: Session = Depends(get_db),
+):
     obj = db.get(Agendamento, agendamento_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
@@ -186,8 +190,8 @@ def detalhar(agendamento_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{agendamento_id}", response_model=AgendamentoOut)
 def atualizar(
-    agendamento_id: int,
     payload: AgendamentoUpdate,
+    agendamento_id: Annotated[int, Path(gt=0)],
     db: Session = Depends(get_db),
 ):
     obj = db.get(Agendamento, agendamento_id)
@@ -246,7 +250,7 @@ def atualizar(
 
 @router.delete("/{agendamento_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remover(
-    agendamento_id: int,
+    agendamento_id: Annotated[int, Path(gt=0)],
     db: Session = Depends(get_db),
 ):
     obj = db.get(Agendamento, agendamento_id)
