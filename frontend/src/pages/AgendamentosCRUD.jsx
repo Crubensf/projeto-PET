@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../services/api";
+import { ensureBundleObject } from "../utils/fhirBundle";
+
+const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:5000")
+  .replace(/\/+$/, "");
 
 function formatBR(iso) {
   const d = new Date(iso);
@@ -199,6 +203,48 @@ export default function AgendamentosCRUD() {
     }
   }
 
+  function baixarJsonFormatado(data, fileName) {
+    const bundle = ensureBundleObject(data);
+    const content = `${JSON.stringify(bundle, null, 2)}\n`;
+    const blob = new Blob([content], {
+      type: "application/fhir+json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function baixarBundleAgendamentoJson(id) {
+    try {
+      setErr("");
+      const bundle = await api.get(`/fhir/bundle/agendamento/${id}`);
+      baixarJsonFormatado(bundle, `bundle_agendamento_${id}.json`);
+    } catch (e) {
+      setErr(String(e?.message || e));
+    }
+  }
+
+  async function baixarBundleGeralJson() {
+    try {
+      setErr("");
+      const bundle = await api.get("/fhir/bundle/geral/transaction");
+      baixarJsonFormatado(bundle, "bundle_geral_validador.json");
+    } catch (e) {
+      setErr(String(e?.message || e));
+    }
+  }
+
+  function abrirComprovantePdf(id) {
+    window.open(`${API_BASE}/fhir/bundle/comprovante/${id}`, "_blank");
+  }
+
+  function abrirBundleGeralPdf() {
+    window.open(`${API_BASE}/fhir/bundle/geral/pdf`, "_blank");
+  }
+
   return (
     <div>
       <div style={styles.pageHeader}>
@@ -209,9 +255,17 @@ export default function AgendamentosCRUD() {
           </div>
         </div>
 
-        <button onClick={loadAll} disabled={loading} style={styles.primaryBtn}>
-          {loading ? "Carregando..." : "Recarregar"}
-        </button>
+        <div style={styles.headerActions}>
+          <button onClick={baixarBundleGeralJson} style={styles.secondaryBtn}>
+            Bundle Geral JSON
+          </button>
+          <button onClick={abrirBundleGeralPdf} style={styles.secondaryBtn}>
+            Bundle Geral (PDF)
+          </button>
+          <button onClick={loadAll} disabled={loading} style={styles.primaryBtn}>
+            {loading ? "Carregando..." : "Recarregar"}
+          </button>
+        </div>
       </div>
 
       {err ? (
@@ -421,6 +475,18 @@ export default function AgendamentosCRUD() {
                           >
                             Remover
                           </button>
+                          <button
+                            onClick={() => baixarBundleAgendamentoJson(a.id)}
+                            style={styles.smallBtnInfo}
+                          >
+                            Bundle JSON
+                          </button>
+                          <button
+                            onClick={() => abrirComprovantePdf(a.id)}
+                            style={styles.smallBtnPdf}
+                          >
+                            PDF
+                          </button>
                         </div>
                       </Td>
                     </tr>
@@ -497,6 +563,12 @@ const styles = {
   },
   h1: { fontSize: 22, fontWeight: 950, color: "#0f172a" },
   h2: { fontSize: 13, color: "#334155", marginTop: 6, maxWidth: 720 },
+  headerActions: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
 
   card: {
     background: "white",
@@ -627,6 +699,24 @@ const styles = {
     border: "1px solid #fecaca",
     background: "#fff1f2",
     color: "#991b1b",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  smallBtnInfo: {
+    padding: "6px 10px",
+    borderRadius: 12,
+    border: "1px solid #bfdbfe",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  smallBtnPdf: {
+    padding: "6px 10px",
+    borderRadius: 12,
+    border: "1px solid #d1d5db",
+    background: "#f8fafc",
+    color: "#0f172a",
     fontWeight: 900,
     cursor: "pointer",
   },

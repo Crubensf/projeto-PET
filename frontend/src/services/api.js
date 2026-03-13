@@ -19,18 +19,46 @@ function readToken() {
 
 
 async function parseResponse(res) {
-  const ct = res.headers.get("content-type") || "";
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
 
-  if (ct.includes("application/json")) {
+  // Suporta application/json, application/fhir+json e application/json+fhir.
+  if (ct.includes("json")) {
     try {
-      return await res.json();
+      const parsed = await res.json();
+      // Guarda defensiva: evita propagar JSON duplamente serializado.
+      if (typeof parsed === "string") {
+        const trimmed = parsed.trim();
+        if (
+          (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+          (trimmed.startsWith("[") && trimmed.endsWith("]"))
+        ) {
+          try {
+            return JSON.parse(trimmed);
+          } catch {
+            return parsed;
+          }
+        }
+      }
+      return parsed;
     } catch {
       return null;
     }
   }
 
   try {
-    return await res.text();
+    const text = await res.text();
+    const trimmed = text.trim();
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return text;
+      }
+    }
+    return text;
   } catch {
     return null;
   }

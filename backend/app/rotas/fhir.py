@@ -1,9 +1,11 @@
+import json
 from io import BytesIO
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select
 
 from app.core.database import get_db
 from app.modelos.paciente import Paciente
@@ -15,6 +17,10 @@ from app.serializadores_fhir.paciente import paciente_para_fhir
 from app.serializadores_fhir.profissional import profissional_para_fhir
 from app.serializadores_fhir.local import local_para_fhir
 from app.serializadores_fhir.agendamento import agendamento_para_fhir
+from app.serializadores_fhir.bundle import (
+    montar_bundle_agendamento,
+    montar_bundle_geral_transacao,
+)
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -38,6 +44,40 @@ def _fmt_dt_br(dt) -> str:
 
 def _safe(v) -> str:
     return "-" if v is None else str(v)
+
+
+def gerar_pdf_bundle_json(titulo: str, bundle: dict) -> bytes:
+    texto = json.dumps(bundle, ensure_ascii=False, indent=2)
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    _, height = A4
+    y = height - 40
+
+    c.setTitle(titulo)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, y, titulo)
+    y -= 16
+    c.setFont("Helvetica", 9)
+    c.drawString(40, y, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    y -= 14
+    c.setFont("Courier", 8)
+
+    for line in texto.splitlines():
+        chunks = [line[i : i + 118] for i in range(0, len(line), 118)] or [""]
+        for chunk in chunks:
+            if y <= 35:
+                c.showPage()
+                y = height - 40
+                c.setFont("Courier", 8)
+            c.drawString(40, y, chunk)
+            y -= 10
+
+    c.showPage()
+    c.save()
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
 
 
 def gerar_pdf_comprovante(a: Agendamento) -> bytes:
@@ -171,6 +211,80 @@ def get_appointment_fhir(agendamento_id: int, db: Session = Depends(get_db)):
     return JSONResponse(content=agendamento_para_fhir(a), media_type="application/fhir+json")
 
 
+@router.get("/bundle/agendamento/{agendamento_id}")
+def get_agendamento_bundle_fhir(agendamento_id: int, db: Session = Depends(get_db)):
+    stmt = (
+        select(Agendamento)
+        .options(
+            joinedload(Agendamento.paciente),
+            joinedload(Agendamento.profissional),
+            joinedload(Agendamento.local),
+            joinedload(Agendamento.especialidade),
+        )
+        .where(Agendamento.id == agendamento_id)
+    )
+    a = db.execute(stmt).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+
+    return JSONResponse(
+        content=montar_bundle_agendamento(a),
+        media_type="application/fhir+json",
+    )
+
+
+@router.get("/bundle/geral/transaction")
+def get_bundle_geral_transaction_fhir(db: Session = Depends(get_db)):
+    pacientes = db.scalars(select(Paciente).order_by(Paciente.nome.asc())).all()
+    profissionais = db.scalars(select(Profissional).order_by(Profissional.nome.asc())).all()
+    locais = db.scalars(select(LocalAtendimento).order_by(LocalAtendimento.nome.asc())).all()
+    agendamentos = db.scalars(
+        select(Agendamento)
+        .options(
+            joinedload(Agendamento.paciente),
+            joinedload(Agendamento.profissional),
+            joinedload(Agendamento.local),
+            joinedload(Agendamento.especialidade),
+        )
+        .order_by(Agendamento.inicio.desc())
+    ).all()
+
+    bundle = montar_bundle_geral_transacao(
+        pacientes=pacientes,
+        profissionais=profissionais,
+        agendamentos=agendamentos,
+        locais=locais,
+    )
+    return JSONResponse(content=bundle, media_type="application/fhir+json")
+
+
+@router.get("/bundle/geral/pdf")
+def get_bundle_geral_pdf(db: Session = Depends(get_db)):
+    pacientes = db.scalars(select(Paciente).order_by(Paciente.nome.asc())).all()
+    profissionais = db.scalars(select(Profissional).order_by(Profissional.nome.asc())).all()
+    locais = db.scalars(select(LocalAtendimento).order_by(LocalAtendimento.nome.asc())).all()
+    agendamentos = db.scalars(
+        select(Agendamento)
+        .options(
+            joinedload(Agendamento.paciente),
+            joinedload(Agendamento.profissional),
+            joinedload(Agendamento.local),
+            joinedload(Agendamento.especialidade),
+        )
+        .order_by(Agendamento.inicio.desc())
+    ).all()
+
+    bundle = montar_bundle_geral_transacao(
+        pacientes=pacientes,
+        profissionais=profissionais,
+        agendamentos=agendamentos,
+        locais=locais,
+    )
+    pdf_bytes = gerar_pdf_bundle_json("Bundle Geral FHIR (transaction)", bundle)
+    headers = {"Content-Disposition": 'inline; filename="bundle_geral_fhir.pdf"'}
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+
 @router.get("/bundle/comprovante/{agendamento_id}")
 def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
     a = db.get(Agendamento, agendamento_id)
@@ -189,4 +303,3 @@ def get_comprovante_pdf(agendamento_id: int, db: Session = Depends(get_db)):
     headers = {"Content-Disposition": f'inline; filename="{filename}"'}
 
     return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
-

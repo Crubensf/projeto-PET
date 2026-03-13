@@ -1,6 +1,3 @@
-MOTHER_NAME_EXT_URL = "https://example.org/fhir/StructureDefinition/patient-mothersName"
-
-
 def paciente_para_fhir(p):
     identifiers = []
 
@@ -48,10 +45,5 @@ def paciente_para_fhir(p):
                 "country": "BR",
             }
         ],
-        "extension": [
-            {
-                "url": MOTHER_NAME_EXT_URL,
-                "valueString": p.nome_mae,
-            }
-        ],
+        # Não publica extension com URL de exemplo (não resolvível em validadores).
     }
