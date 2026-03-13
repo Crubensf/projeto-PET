@@ -134,10 +134,14 @@ def montar_bundle_agendamento(a):
         raise ValueError("Agendamento sem relacionamentos obrigatórios para gerar Bundle.")
 
     resources = [
-        paciente_para_fhir(a.paciente),
-        profissional_para_fhir(a.profissional),
-        local_para_fhir(a.local),
-        agendamento_para_fhir(a),
+        paciente_para_fhir(a.paciente, for_bundle=True),
+        profissional_para_fhir(
+            a.profissional,
+            for_bundle=True,
+            qualification_text=getattr(a.especialidade, "nome", None),
+        ),
+        local_para_fhir(a.local, for_bundle=True),
+        agendamento_para_fhir(a, for_bundle=True),
     ]
     return _montar_bundle_transacao_por_recursos(resources)
 
@@ -150,12 +154,12 @@ def montar_bundle_geral_transacao(
 ):
     resources = []
     for p in pacientes or []:
-        resources.append(paciente_para_fhir(p))
+        resources.append(paciente_para_fhir(p, for_bundle=True))
     for prof in profissionais or []:
-        resources.append(profissional_para_fhir(prof))
+        resources.append(profissional_para_fhir(prof, for_bundle=True))
     for loc in locais or []:
-        resources.append(local_para_fhir(loc))
+        resources.append(local_para_fhir(loc, for_bundle=True))
     for ag in agendamentos or []:
-        resources.append(agendamento_para_fhir(ag))
+        resources.append(agendamento_para_fhir(ag, for_bundle=True))
 
     return _montar_bundle_transacao_por_recursos(resources)

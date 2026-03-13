@@ -26,24 +26,15 @@ class FhirTransactionBundleTestCase(unittest.TestCase):
     ) -> SimpleNamespace:
         paciente = SimpleNamespace(
             id=4,
-            cpf="00000000004",
-            cartao_sus="123457891234567",
+            cpf="000.000.000-04",
+            cartao_sus="12345 7891234 567",
             nome="Caio R Feitosa",
-            telefone="89981248316",
+            telefone="(89) 98124-8316",
             data_nascimento=date(2001, 2, 2),
             municipio="Picos",
             endereco="Rua antonio benedito",
             nome_mae="Celia Cristina",
-        )
-        profissional = SimpleNamespace(
-            id=23,
-            nome="Dra. Renata Ribeiro",
-        )
-        local = SimpleNamespace(
-            id=1,
-            nome="UBS Canto da Várzea",
-            municipio="Picos",
-            endereco="Av. Principal, 1000",
+            sexo="masculino",
         )
         especialidade = SimpleNamespace(
             id=1,
@@ -52,6 +43,23 @@ class FhirTransactionBundleTestCase(unittest.TestCase):
         )
         if especialidade_duration is not None:
             especialidade.duracao_minutos = especialidade_duration
+
+        profissional = SimpleNamespace(
+            id=23,
+            nome="Dra. Renata Ribeiro",
+            crm="12.345-6",
+            crm_uf="pi",
+            telefone="(89) 99999-0000",
+            email="renata@example.com",
+            especialidade=especialidade,
+        )
+        local = SimpleNamespace(
+            id=1,
+            nome="UBS Canto da Várzea",
+            municipio="Picos",
+            endereco="Av. Principal, 1000",
+            ativo=True,
+        )
 
         agendamento = SimpleNamespace(
             id=6,
@@ -88,6 +96,8 @@ class FhirTransactionBundleTestCase(unittest.TestCase):
         start = datetime.fromisoformat(appointment["start"])
         end = datetime.fromisoformat(appointment["end"])
         self.assertEqual(end - start, timedelta(minutes=30))
+        self.assertIsNotNone(start.tzinfo)
+        self.assertEqual(start.utcoffset(), timedelta(hours=-3))
 
     def test_uses_duration_when_present(self) -> None:
         agendamento = self._build_entities(agendamento_duration=45)
@@ -119,6 +129,72 @@ class FhirTransactionBundleTestCase(unittest.TestCase):
                 for ext in extensions
             )
         )
+        self.assertTrue(
+            any(
+                ext.get("url")
+                == "http://hl7.org/fhir/StructureDefinition/patient-mothersMaidenName"
+                and ext.get("valueString") == "Celia Cristina"
+                for ext in extensions
+                if isinstance(ext, dict)
+            )
+        )
+
+    def test_bundle_normalizes_identifiers_and_enriches_resources(self) -> None:
+        agendamento = self._build_entities()
+        bundle = montar_bundle_agendamento(agendamento)
+
+        patient = next(
+            entry["resource"]
+            for entry in bundle["entry"]
+            if entry["resource"]["resourceType"] == "Patient"
+        )
+        practitioner = next(
+            entry["resource"]
+            for entry in bundle["entry"]
+            if entry["resource"]["resourceType"] == "Practitioner"
+        )
+        location = next(
+            entry["resource"]
+            for entry in bundle["entry"]
+            if entry["resource"]["resourceType"] == "Location"
+        )
+        appointment = next(
+            entry["resource"]
+            for entry in bundle["entry"]
+            if entry["resource"]["resourceType"] == "Appointment"
+        )
+
+        patient_identifiers = {
+            identifier["system"]: identifier["value"]
+            for identifier in patient["identifier"]
+        }
+        self.assertEqual(
+            patient_identifiers["http://rnds.saude.gov.br/fhir/r4/NamingSystem/cpf"],
+            "00000000004",
+        )
+        self.assertEqual(
+            patient_identifiers["http://rnds.saude.gov.br/fhir/r4/NamingSystem/cns"],
+            "123457891234567",
+        )
+        self.assertEqual(patient["gender"], "male")
+
+        practitioner_identifier = practitioner["identifier"][0]
+        self.assertEqual(
+            practitioner_identifier["system"],
+            "http://rnds.saude.gov.br/fhir/r4/NamingSystem/crm",
+        )
+        self.assertEqual(practitioner_identifier["value"], "PI123456")
+        self.assertEqual(
+            practitioner["qualification"][0]["code"]["text"],
+            "Endocrinologia",
+        )
+        self.assertEqual(len(practitioner["telecom"]), 2)
+
+        self.assertEqual(location["status"], "active")
+
+        self.assertEqual(appointment["appointmentType"]["text"], "PRESENCIAL")
+        self.assertEqual(appointment["description"], "Endocrinologia")
+        self.assertEqual(appointment["comment"], "Modalidade: PRESENCIAL")
 
     def test_urn_references_are_consistent(self) -> None:
         agendamento = self._build_entities()
@@ -164,6 +240,9 @@ class FhirTransactionBundleTestCase(unittest.TestCase):
         for appointment in appointments:
             self.assertIn("start", appointment)
             self.assertIn("end", appointment)
+            self.assertEqual(appointment["appointmentType"]["text"], "PRESENCIAL")
+            self.assertTrue(appointment["start"].endswith("-03:00"))
+            self.assertTrue(appointment["end"].endswith("-03:00"))
             for participant in appointment.get("participant", []):
                 reference = participant.get("actor", {}).get("reference")
                 self.assertIsInstance(reference, str)

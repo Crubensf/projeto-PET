@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+from app.serializadores_fhir.common import to_fhir_datetime
+
 
 DEFAULT_APPOINTMENT_DURATION_MINUTES = 30
 
@@ -46,7 +48,20 @@ def _resolve_end_datetime(a):
     return inicio + timedelta(minutes=_resolve_duration_minutes(a))
 
 
-def agendamento_para_fhir(a):
+def _resolve_description(a) -> str | None:
+    for attr in ("description", "descricao", "observacao"):
+        value = getattr(a, attr, None)
+        if value:
+            return value
+
+    especialidade = getattr(a, "especialidade", None)
+    if especialidade is not None:
+        return getattr(especialidade, "nome", None)
+
+    return None
+
+
+def agendamento_para_fhir(a, *, for_bundle: bool = False):
     # 🔥 Mapeamento PT → FHIR
     STATUS_MAP = {
         "agendado": "booked",
@@ -97,17 +112,26 @@ def agendamento_para_fhir(a):
         "comment": f"Modalidade: {a.modalidade}",
     }
 
+    if getattr(a, "modalidade", None):
+        resource["appointmentType"] = {
+            "text": a.modalidade,
+        }
+
+    description = _resolve_description(a)
+    if description:
+        resource["description"] = description
+
     start_dt = getattr(a, "inicio", None)
     end_dt = _resolve_end_datetime(a)
 
     if start_dt is not None and end_dt is not None:
-        resource["start"] = start_dt.isoformat()
-        resource["end"] = end_dt.isoformat()
+        resource["start"] = to_fhir_datetime(start_dt)
+        resource["end"] = to_fhir_datetime(end_dt)
     elif start_dt is not None and status_fhir == "booked":
         # app-2/app-3: booked exige start + end.
-        resource["start"] = start_dt.isoformat()
-        resource["end"] = (
+        resource["start"] = to_fhir_datetime(start_dt)
+        resource["end"] = to_fhir_datetime(
             start_dt + timedelta(minutes=DEFAULT_APPOINTMENT_DURATION_MINUTES)
-        ).isoformat()
+        )
 
     return resource

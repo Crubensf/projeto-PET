@@ -1,26 +1,47 @@
-def paciente_para_fhir(p):
-    identifiers = []
+from app.serializadores_fhir.common import (
+    CNS_NAMING_SYSTEM,
+    CPF_NAMING_SYSTEM,
+    MOTHERS_MAIDEN_NAME_URL,
+    normalize_cns,
+    normalize_cpf,
+    normalize_gender,
+)
 
-    # CPF (sempre presente)
-    identifiers.append(
-        {
-            "use": "official",
-            "system": "https://gov.br/cpf",
-            "value": p.cpf,
-        }
+
+def paciente_para_fhir(p, *, for_bundle: bool = False):
+    identifiers = []
+    cpf_value = (
+        normalize_cpf(getattr(p, "cpf", None))
+        if for_bundle
+        else getattr(p, "cpf", None)
+    )
+    cns_value = (
+        normalize_cns(getattr(p, "cartao_sus", None))
+        if for_bundle
+        else getattr(p, "cartao_sus", None)
     )
 
-    # CNS (opcional)
-    if p.cartao_sus:
+    if cpf_value:
         identifiers.append(
             {
                 "use": "official",
-                "system": "https://saude.gov.br/sus/cartao",
-                "value": p.cartao_sus,
+                "system": CPF_NAMING_SYSTEM if for_bundle else "https://gov.br/cpf",
+                "value": cpf_value,
             }
         )
 
-    return {
+    if cns_value:
+        identifiers.append(
+            {
+                "use": "official",
+                "system": CNS_NAMING_SYSTEM
+                if for_bundle
+                else "https://saude.gov.br/sus/cartao",
+                "value": cns_value,
+            }
+        )
+
+    resource = {
         "resourceType": "Patient",
         "id": str(p.id),
         "identifier": identifiers,
@@ -30,20 +51,51 @@ def paciente_para_fhir(p):
                 "text": p.nome,
             }
         ],
-        "telecom": [
+    }
+
+    telecom = []
+    if getattr(p, "telefone", None):
+        telecom.append(
             {
                 "system": "phone",
                 "value": p.telefone,
                 "use": "mobile",
             }
-        ],
-        "birthDate": p.data_nascimento.isoformat(),
-        "address": [
+        )
+    if getattr(p, "email", None):
+        telecom.append(
             {
-                "text": p.endereco,
-                "city": p.municipio,
-                "country": "BR",
+                "system": "email",
+                "value": p.email,
+                "use": "home",
             }
-        ],
-        # Não publica extension com URL de exemplo (não resolvível em validadores).
+        )
+    if telecom:
+        resource["telecom"] = telecom
+
+    gender = normalize_gender(getattr(p, "gender", None) or getattr(p, "sexo", None))
+    if gender:
+        resource["gender"] = gender
+
+    if getattr(p, "data_nascimento", None):
+        resource["birthDate"] = p.data_nascimento.isoformat()
+
+    address = {
+        "country": "BR",
     }
+    if getattr(p, "endereco", None):
+        address["text"] = p.endereco
+    if getattr(p, "municipio", None):
+        address["city"] = p.municipio
+    if len(address) > 1:
+        resource["address"] = [address]
+
+    if getattr(p, "nome_mae", None):
+        resource["extension"] = [
+            {
+                "url": MOTHERS_MAIDEN_NAME_URL,
+                "valueString": p.nome_mae,
+            }
+        ]
+
+    return resource
