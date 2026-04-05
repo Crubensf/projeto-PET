@@ -1,6 +1,6 @@
 const RAW_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:5000";
 const API_BASE = RAW_BASE.replace(/\/+$/, "");
-
+console.log("API BASE:", import.meta.env.VITE_API_BASE);
 
 function readToken() {
   if (typeof window === "undefined") return null;

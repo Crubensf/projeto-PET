@@ -11,48 +11,41 @@ export default function Login() {
   const [err, setErr] = useState("");
 
   async function handleSubmit(e) {
-    e.preventDefault();
-    setErr("");
-    setLoading(true);
+  e.preventDefault();
+  setErr("");
+  setLoading(true);
 
-    try {
-      const data = await api.post("/api/auth/login", { email, senha });
+  try {
+    const formData = new URLSearchParams();
+    formData.append("username", email);
+    formData.append("password", senha);
 
-      
-      console.log("LOGIN RESPONSE:", data);
+    const res = await fetch(`${import.meta.env.VITE_API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formData.toString(),
+    });
 
-      const token =
-        data?.access_token ||
-        data?.token ||
-        data?.accessToken ||
-        data?.jwt ||
-        data?.data?.access_token ||
-        data?.data?.token;
+    const data = await res.json();
 
-      console.log("TOKEN EXTRAÍDO:", token);
-
-      if (!token || typeof token !== "string") {
-        throw new Error(
-          "Login NÃO retornou token. Veja 'LOGIN RESPONSE' no console."
-        );
-      }
-
-      localStorage.setItem("access_token", token);
-      localStorage.removeItem("token"); // legado
-
-      console.log(
-        "TOKEN SALVO NO STORAGE:",
-        localStorage.getItem("access_token")
-      );
-
-      navigate("/", { replace: true });
-    } catch (e) {
-      setErr(e?.message || "Falha ao fazer login.");
-    } finally {
-      setLoading(false);
+    if (!res.ok) {
+      throw new Error(data?.detail || "Falha no login");
     }
-  }
 
+    const token = data.access_token;
+
+    localStorage.setItem("access_token", token);
+
+    navigate("/", { replace: true });
+
+  } catch (e) {
+    setErr(e.message);
+  } finally {
+    setLoading(false);
+  }
+}
   return (
     <div style={styles.page}>
       <div style={styles.card}>
